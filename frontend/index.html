@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gestión de Activos Fijos</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/responsive.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container-main">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-building"></i>
+                    <span>Activos</span>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <ul class="nav-menu">
+                    <li class="nav-item active">
+                        <a href="#dashboard" class="nav-link" data-page="dashboard">
+                            <i class="fas fa-chart-line"></i>
+                            <span>Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#assets" class="nav-link" data-page="assets">
+                            <i class="fas fa-list"></i>
+                            <span>Activos</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#new-asset" class="nav-link" data-page="new-asset">
+                            <i class="fas fa-plus-circle"></i>
+                            <span>Nuevo Activo</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#depreciation" class="nav-link" data-page="depreciation">
+                            <i class="fas fa-chart-bar"></i>
+                            <span>Depreciación</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#accounting" class="nav-link" data-page="accounting">
+                            <i class="fas fa-calculator"></i>
+                            <span>Configuración Contable</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#reports" class="nav-link" data-page="reports">
+                            <i class="fas fa-file-pdf"></i>
+                            <span>Reportes</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a href="#categories" class="nav-link" data-page="categories">
+                            <i class="fas fa-tags"></i>
+                            <span>Categorías</span>
+                        </a>
+                    </li>
+                    <li class="nav-divider"></li>
+                    <li class="nav-item">
+                        <a href="#settings" class="nav-link" data-page="settings">
+                            <i class="fas fa-cog"></i>
+                            <span>Configuración</span>
+                        </a>
+                    </li>
+                </ul>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar">
+                        <i class="fas fa-user-circle"></i>
+                    </div>
+                    <div class="user-details">
+                        <p class="user-name" id="userName">Usuario</p>
+                        <p class="user-role" id="userRole">Admin</p>
+                    </div>
+                </div>
+                <button id="logoutBtn" class="btn-logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <button class="btn-toggle-sidebar" id="toggleSidebar">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h1 id="pageTitle">Dashboard</h1>
+                </div>
+                <div class="header-right">
+                    <div class="search-box">
+                        <input type="text" id="searchInput" placeholder="Buscar activos..." class="search-input">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <div class="notifications">
+                        <button class="btn-notifications">
+                            <i class="fas fa-bell"></i>
+                            <span class="notification-badge">3</span>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="page-content">
+                <!-- Dashboard Page -->
+                <div id="dashboard-page" class="page-section active">
+                    <div class="dashboard-grid">
+                        <div class="kpi-card">
+                            <div class="kpi-header">
+                                <h3>Total Activos</h3>
+                                <i class="fas fa-boxes"></i>
+                            </div>
+                            <div class="kpi-value" id="totalAssets">0</div>
+                            <div class="kpi-subtitle">Activos registrados</div>
+                        </div>
+
+                        <div class="kpi-card">
+                            <div class="kpi-header">
+                                <h3>Valor Total</h3>
+                                <i class="fas fa-dollar-sign"></i>
+                            </div>
+                            <div class="kpi-value" id="totalValue">RD$ 0</div>
+                            <div class="kpi-subtitle">Costo de adquisición</div>
+                        </div>
+
+                        <div class="kpi-card">
+                            <div class="kpi-header">
+                                <h3>Depreciación</h3>
+                                <i class="fas fa-chart-pie"></i>
+                            </div>
+                            <div class="kpi-value" id="totalDepreciation">RD$ 0</div>
+                            <div class="kpi-subtitle">Acumulada</div>
+                        </div>
+
+                        <div class="kpi-card">
+                            <div class="kpi-header">
+                                <h3>Valor Neto</h3>
+                                <i class="fas fa-book"></i>
+                            </div>
+                            <div class="kpi-value" id="netValue">RD$ 0</div>
+                            <div class="kpi-subtitle">Valor en libros</div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-charts">
+                        <div class="chart-card">
+                            <h3>Activos por Categoría</h3>
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+
+                        <div class="chart-card">
+                            <h3>Distribución por Estado</h3>
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="recent-assets">
+                        <h3>Activos Recientes</h3>
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th>Categoría</th>
+                                    <th>Valor</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentAssetsTable">
+                                <!-- Datos dinámicos -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Assets Page -->
+                <div id="assets-page" class="page-section">
+                    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <h2>Gestión de Activos</h2>
+                        <a href="#new-asset" class="btn btn-primary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background-color: #003D7A; color: white; border-radius: 4px; cursor: pointer; font-size: 14px; border: none;">
+                            <i class="fas fa-plus"></i> Nuevo Activo
+                        </a>
+                    </div>
+
+                    <div class="filters-panel">
+                        <div class="filter-group">
+                            <label>Categoría</label>
+                            <select id="filterCategory" class="form-control">
+                                <option value="">Todas</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Estado</label>
+                            <select id="filterStatus" class="form-control">
+                                <option value="">Todos</option>
+                                <option value="active">Activo</option>
+                                <option value="inactive">Inactivo</option>
+                                <option value="retired">Retirado</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" id="clearFilters">Limpiar Filtros</button>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th>Categoría</th>
+                                    <th>Costo</th>
+                                    <th>Depreciación</th>
+                                    <th>Valor Neto</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="assetsTable">
+                                <!-- Datos dinámicos -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="pagination" id="assetsPagination"></div>
+                </div>
+
+                <!-- New Asset Page -->
+                <div id="new-asset-page" class="page-section">
+                    <div class="page-header">
+                        <h2>Registrar Nuevo Activo</h2>
+                    </div>
+
+                    <form id="assetForm" class="form-container">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="description" class="form-label">Descripción *</label>
+                                <input type="text" id="description" name="description" class="form-control" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="category" class="form-label">Categoría *</label>
+                                <select id="category" name="category" class="form-control" required>
+                                    <option value="">Seleccionar categoría</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="acquisitionDate" class="form-label">Fecha de Adquisición *</label>
+                                <input type="date" id="acquisitionDate" name="acquisitionDate" class="form-control" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="acquisitionCost" class="form-label">Costo de Adquisición (RD$) *</label>
+                                <input type="number" id="acquisitionCost" name="acquisitionCost" class="form-control" step="0.01" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="residualValue" class="form-label">Valor Residual (%) *</label>
+                                <input type="number" id="residualValue" name="residualValue" class="form-control" value="10" min="0" max="100" step="0.01" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="usefulLife" class="form-label">Vida Útil (años) *</label>
+                                <input type="number" id="usefulLife" name="usefulLife" class="form-control" min="1" required>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="location" class="form-label">Ubicación</label>
+                                <input type="text" id="location" name="location" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="department" class="form-label">Departamento</label>
+                                <input type="text" id="department" name="department" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="responsible" class="form-label">Responsable</label>
+                                <input type="text" id="responsible" name="responsible" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="brand" class="form-label">Marca</label>
+                                <input type="text" id="brand" name="brand" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="color" class="form-label">Color</label>
+                                <input type="text" id="color" name="color" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="licensePlate" class="form-label">No. Placa</label>
+                                <input type="text" id="licensePlate" name="licensePlate" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="serialNumber" class="form-label">Número de Serie</label>
+                                <input type="text" id="serialNumber" name="serialNumber" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="supplierName" class="form-label">Suplidor</label>
+                                <input type="text" id="supplierName" name="supplierName" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="fiscalReceipt" class="form-label">No. NCF</label>
+                                <input type="text" id="fiscalReceipt" name="fiscalReceipt" class="form-control">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="assetAccount" class="form-label">Cuenta de Activo</label>
+                                <input type="text" id="assetAccount" name="assetAccount" class="form-control" readonly>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="assetAccountName" class="form-label">Nombre Cuenta de Activo</label>
+                                <input type="text" id="assetAccountName" name="assetAccountName" class="form-control" readonly>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="deprecAccumulated" class="form-label">Cuenta Depreciación Acumulada</label>
+                                <input type="text" id="deprecAccumulated" name="deprecAccumulated" class="form-control" readonly>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="deprecExpense" class="form-label">Cuenta Gasto Depreciación</label>
+                                <input type="text" id="deprecExpense" name="deprecExpense" class="form-control" readonly>
+                            </div>
+
+                            <div class="form-group full-width">
+                                <label for="notes" class="form-label">Observaciones</label>
+                                <textarea id="notes" name="notes" class="form-control" rows="4"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Guardar Activo
+                            </button>
+                            <button type="reset" class="btn btn-secondary">
+                                <i class="fas fa-redo"></i> Limpiar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Depreciation Page -->
+                <div id="depreciation-page" class="page-section">
+                    <div class="page-header">
+                        <h2>Análisis de Depreciación</h2>
+                    </div>
+
+                    <div class="filters-panel">
+                        <div class="filter-group">
+                            <label>Año</label>
+                            <select id="depYearFilter" class="form-control">
+                                <option value="">Seleccionar año</option>
+                            </select>
+                        </div>
+                        <div class="filter-group">
+                            <label>Mes</label>
+                            <select id="depMonthFilter" class="form-control">
+                                <option value="">Todos los meses</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="depreciation-summary">
+                        <div class="summary-card">
+                            <h4>Depreciación del Período</h4>
+                            <div class="summary-value" id="periodDepreciation">RD$ 0</div>
+                        </div>
+                    </div>
+
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Código Activo</th>
+                                <th>Descripción</th>
+                                <th>Categoría</th>
+                                <th>Período</th>
+                                <th>Depreciación</th>
+                                <th>Acumulada</th>
+                                <th>Valor Neto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="depreciationTable">
+                            <!-- Datos dinámicos -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Accounting Page -->
+                <div id="accounting-page" class="page-section">
+                    <div class="page-header">
+                        <h2>Configuración Contable</h2>
+                    </div>
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="chart-of-accounts">Catálogo de Cuentas</button>
+                        <button class="tab-btn" data-tab="journal-entries">Asientos Contables</button>
+                    </div>
+                    <div class="tab-content">
+                        <div id="chart-of-accounts" class="tab-pane active">
+                            <div style="margin-bottom: 15px;">
+                                <button class="btn btn-primary" id="newAccountBtn"><i class="fas fa-plus"></i> Nueva Cuenta</button>
+                                <button class="btn btn-secondary" id="uploadExcelBtn"><i class="fas fa-upload"></i> Cargar Excel</button>
+                            </div>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Nombre</th>
+                                        <th>Tipo</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="chartTable"><!-- Dinámico --></tbody>
+                            </table>
+                        </div>
+                        <div id="journal-entries" class="tab-pane">
+                            <div style="margin-bottom: 15px;">
+                                <button class="btn btn-primary" id="generateJournalBtn"><i class="fas fa-book"></i> Generar Asientos del Mes</button>
+                            </div>
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>Descripción</th>
+                                        <th>Cuenta Débito</th>
+                                        <th>Cuenta Crédito</th>
+                                        <th>Monto</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="journalTable"><!-- Dinámico --></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reports Page -->
+                <div id="reports-page" class="page-section">
+                    <div class="page-header">
+                        <h2>Reportes</h2>
+                    </div>
+
+                    <div class="reports-grid">
+                        <div class="report-card">
+                            <div class="report-icon">
+                                <i class="fas fa-chart-bar"></i>
+                            </div>
+                            <h3>Por Categoría</h3>
+                            <p>Resumen de activos y depreciación por categoría</p>
+                            <button class="btn btn-outline" data-report="by-category">Ver Reporte</button>
+                        </div>
+
+                        <div class="report-card">
+                            <div class="report-icon">
+                                <i class="fas fa-building"></i>
+                            </div>
+                            <h3>Por Departamento</h3>
+                            <p>Distribución de activos por departamento</p>
+                            <button class="btn btn-outline" data-report="by-department">Ver Reporte</button>
+                        </div>
+
+                        <div class="report-card">
+                            <div class="report-icon">
+                                <i class="fas fa-hourglass-half"></i>
+                            </div>
+                            <h3>Antigüedad</h3>
+                            <p>Análisis de antigüedad de los activos</p>
+                            <button class="btn btn-outline" data-report="aging">Ver Reporte</button>
+                        </div>
+
+                        <div class="report-card">
+                            <div class="report-icon">
+                                <i class="fas fa-download"></i>
+                            </div>
+                            <h3>Exportar</h3>
+                            <p>Descargar datos en formato CSV</p>
+                            <button class="btn btn-outline" id="exportBtn">Descargar CSV</button>
+                        </div>
+                    </div>
+
+                    <div id="reportContent" class="report-content"></div>
+                </div>
+
+                <!-- Categories Page -->
+                <div id="categories-page" class="page-section">
+                    <div class="page-header">
+                        <h2>Categorías de Activos</h2>
+                        <button class="btn btn-primary" id="newCategoryBtn">
+                            <i class="fas fa-plus"></i> Nueva Categoría
+                        </button>
+                    </div>
+
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Tasa de Depreciación</th>
+                                <th>Activos</th>
+                                <th>Descripción</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="categoriesTable">
+                            <!-- Datos dinámicos -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Settings Page -->
+                <div id="settings-page" class="page-section">
+                    <div class="page-header">
+                        <h2>Configuración</h2>
+                    </div>
+
+                    <div class="settings-container">
+                        <div class="settings-section">
+                            <h3>Información de Perfil</h3>
+                            <form id="profileForm" class="form-container">
+                                <div class="form-group">
+                                    <label class="form-label">Usuario</label>
+                                    <input type="text" id="profileUsername" class="form-control" disabled>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Email</label>
+                                    <input type="email" id="profileEmail" class="form-control" disabled>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Nombre</label>
+                                    <input type="text" id="profileName" class="form-control">
+                                </div>
+                                <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for Asset Details -->
+    <div id="assetModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <div id="assetModalBody"></div>
+        </div>
+    </div>
+
+    <!-- Modal for Edit Category -->
+    <div id="editCategoryModal" class="modal">
+        <div class="modal-content" style="width: 600px;">
+            <span class="modal-close">&times;</span>
+            <h2>Editar Categoría</h2>
+            <form id="editCategoryForm">
+                <div class="form-group">
+                    <label class="form-label">Nombre</label>
+                    <input type="text" id="editCatName" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tasa de Depreciación (%)</label>
+                    <input type="number" id="editCatDepRate" class="form-control" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Descripción</label>
+                    <textarea id="editCatDesc" class="form-control"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cuenta de Activo</label>
+                    <input type="text" id="editCatAssetAcc" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Nombre Cuenta Activo</label>
+                    <input type="text" id="editCatAssetAccName" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cuenta Depreciación Acumulada</label>
+                    <input type="text" id="editCatDepAcc" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Cuenta Gasto Depreciación</label>
+                    <input type="text" id="editCatExpAcc" class="form-control">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('editCategoryModal').style.display='none'">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Create Account -->
+    <div id="newAccountModal" class="modal">
+        <div class="modal-content" style="width: 500px;">
+            <span class="modal-close">&times;</span>
+            <h2>Nueva Cuenta Contable</h2>
+            <form id="newAccountForm">
+                <div class="form-group">
+                    <label class="form-label">Código de Cuenta</label>
+                    <input type="text" id="accountCode" class="form-control" placeholder="Ej: 1100" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Nombre</label>
+                    <input type="text" id="accountName" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Tipo de Cuenta</label>
+                    <select id="accountType" class="form-control" required>
+                        <option value="Activo">Activo</option>
+                        <option value="Pasivo">Pasivo</option>
+                        <option value="Capital">Capital</option>
+                        <option value="Ingreso">Ingreso</option>
+                        <option value="Gasto">Gasto</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Descripción</label>
+                    <textarea id="accountDesc" class="form-control"></textarea>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('newAccountModal').style.display='none'">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Generate Journal -->
+    <div id="generateJournalModal" class="modal">
+        <div class="modal-content" style="width: 500px;">
+            <span class="modal-close">&times;</span>
+            <h2>Generar Asientos del Mes</h2>
+            <form id="generateJournalForm">
+                <div class="form-group">
+                    <label class="form-label">Año</label>
+                    <input type="number" id="journalYear" class="form-control" min="2020" max="2099" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Mes</label>
+                    <select id="journalMonth" class="form-control" required>
+                        <option value="">Seleccionar mes</option>
+                        <option value="1">Enero</option>
+                        <option value="2">Febrero</option>
+                        <option value="3">Marzo</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Mayo</option>
+                        <option value="6">Junio</option>
+                        <option value="7">Julio</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Septiembre</option>
+                        <option value="10">Octubre</option>
+                        <option value="11">Noviembre</option>
+                        <option value="12">Diciembre</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Generar</button>
+                    <button type="button" class="btn btn-secondary" onclick="document.getElementById('generateJournalModal').style.display='none'">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

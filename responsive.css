@@ -1,0 +1,426 @@
+/* Responsive Design */
+
+/* Tablets - 768px y menores */
+@media (max-width: 1200px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .dashboard-charts {
+        grid-template-columns: 1fr;
+    }
+
+    .form-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .page-content {
+        padding: 20px;
+    }
+
+    .header {
+        padding: 0 20px;
+    }
+
+    .search-box {
+        width: 200px;
+    }
+}
+
+@media (max-width: 768px) {
+    .btn-toggle-sidebar {
+        display: block;
+    }
+
+    .container-main {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        position: fixed;
+        left: -280px;
+        top: 0;
+        height: 100vh;
+        z-index: 999;
+        transition: left 0.3s ease;
+        box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .sidebar.open {
+        left: 0;
+    }
+
+    .main-content {
+        width: 100%;
+    }
+
+    .header {
+        padding: 0 15px;
+        height: 60px;
+    }
+
+    .header-left h1 {
+        font-size: 18px;
+    }
+
+    .header-right {
+        gap: 10px;
+    }
+
+    .search-box {
+        display: none;
+    }
+
+    .page-content {
+        padding: 15px;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .kpi-card {
+        padding: 18px;
+    }
+
+    .kpi-value {
+        font-size: 22px;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 15px;
+    }
+
+    .filters-panel {
+        flex-direction: column;
+    }
+
+    .filter-group {
+        width: 100%;
+    }
+
+    .reports-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .table {
+        font-size: 12px;
+    }
+
+    .table th,
+    .table td {
+        padding: 10px;
+    }
+
+    .modal-content {
+        width: 95%;
+        padding: 20px;
+    }
+
+    .toast {
+        bottom: 15px;
+        right: 15px;
+        left: 15px;
+        width: auto;
+    }
+}
+
+/* Mobile - 576px y menores */
+@media (max-width: 576px) {
+    .sidebar {
+        width: 100%;
+        left: -100%;
+    }
+
+    .sidebar.open {
+        left: 0;
+    }
+
+    .header {
+        height: 55px;
+        padding: 0 10px;
+    }
+
+    .header-left h1 {
+        font-size: 16px;
+    }
+
+    .header-right {
+        gap: 5px;
+    }
+
+    .page-content {
+        padding: 12px;
+    }
+
+    .kpi-card {
+        padding: 15px;
+    }
+
+    .kpi-header {
+        margin-bottom: 12px;
+    }
+
+    .kpi-header h3 {
+        font-size: 11px;
+    }
+
+    .kpi-value {
+        font-size: 18px;
+    }
+
+    .kpi-subtitle {
+        font-size: 11px;
+    }
+
+    .chart-card {
+        padding: 15px;
+    }
+
+    .recent-assets {
+        padding: 15px;
+    }
+
+    .form-container {
+        padding: 15px;
+    }
+
+    .form-group {
+        margin-bottom: 12px;
+    }
+
+    .form-label {
+        margin-bottom: 6px;
+        font-size: 12px;
+    }
+
+    .form-control {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    .btn {
+        padding: 8px 16px;
+        font-size: 12px;
+    }
+
+    .table {
+        font-size: 11px;
+    }
+
+    .table th,
+    .table td {
+        padding: 8px 5px;
+    }
+
+    .page-header h2 {
+        font-size: 18px;
+    }
+
+    .logo {
+        font-size: 18px;
+    }
+
+    .logo i {
+        font-size: 22px;
+    }
+
+    .modal-content {
+        width: 90%;
+        padding: 15px;
+    }
+
+    .modal-close {
+        right: 15px;
+        top: 15px;
+        font-size: 24px;
+    }
+
+    .report-card {
+        padding: 18px;
+    }
+
+    .report-icon {
+        font-size: 32px;
+    }
+
+    .settings-container {
+        padding: 15px;
+    }
+
+    .sidebar-footer {
+        padding: 15px;
+    }
+
+    .user-name {
+        font-size: 12px;
+    }
+
+    .user-role {
+        font-size: 10px;
+    }
+
+    .nav-link {
+        padding: 10px 15px;
+        gap: 12px;
+    }
+
+    .nav-link i {
+        font-size: 16px;
+    }
+
+    .sidebar-header {
+        padding: 20px 15px;
+    }
+
+    .sidebar-nav {
+        padding: 15px 0;
+    }
+}
+
+/* Extra small - 360px */
+@media (max-width: 360px) {
+    .header-left h1 {
+        font-size: 14px;
+    }
+
+    .kpi-value {
+        font-size: 16px;
+    }
+
+    .page-header h2 {
+        font-size: 16px;
+    }
+
+    .table {
+        font-size: 10px;
+    }
+
+    .table th,
+    .table td {
+        padding: 6px 3px;
+    }
+
+    .btn {
+        padding: 6px 12px;
+        font-size: 11px;
+    }
+
+    .logo span {
+        display: none;
+    }
+
+    .user-details {
+        display: none;
+    }
+
+    .btn-logout {
+        padding: 6px 10px;
+        font-size: 14px;
+    }
+}
+
+/* Utility Classes */
+@media (max-width: 768px) {
+    .hide-mobile {
+        display: none !important;
+    }
+}
+
+@media (min-width: 769px) {
+    .show-mobile {
+        display: none !important;
+    }
+}
+
+/* Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --gray-50: #1f2937;
+        --gray-100: #111827;
+        --text-primary: #f9fafb;
+        --text-secondary: #d1d5db;
+    }
+
+    body {
+        background-color: #0f1419;
+        color: var(--text-primary);
+    }
+
+    .modal-content,
+    .table,
+    .form-container,
+    .settings-container,
+    .page-section,
+    .chart-card,
+    .recent-assets,
+    .kpi-card,
+    .report-card,
+    .filters-panel {
+        background-color: #1f2937;
+        color: var(--text-primary);
+    }
+
+    .form-control {
+        background-color: #111827;
+        color: var(--text-primary);
+        border-color: #374151;
+    }
+
+    .table thead {
+        background-color: #111827;
+    }
+
+    .table tbody tr:hover {
+        background-color: #111827;
+    }
+
+    .btn-secondary {
+        background-color: #374151;
+        color: var(--text-primary);
+    }
+
+    .btn-secondary:hover {
+        background-color: #4b5563;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .sidebar,
+    .header,
+    .btn,
+    .btn-toggle-sidebar,
+    .notifications,
+    .search-box,
+    .form-actions {
+        display: none !important;
+    }
+
+    .main-content {
+        margin: 0;
+    }
+
+    .page-content {
+        padding: 0;
+    }
+
+    .table,
+    .modal-content {
+        page-break-inside: avoid;
+    }
+}
