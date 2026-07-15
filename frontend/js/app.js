@@ -1172,6 +1172,31 @@ async function viewAssetDetails(assetId) {
             vehicleEquipInfo.style.display = 'none';
         }
 
+        // Llenar información de compra
+        const residualValue = parseFloat(asset.acquisition_cost) * (parseFloat(asset.residual_value_percent) / 100);
+        const depreciableAmount = parseFloat(asset.acquisition_cost) - residualValue;
+        const monthlyDepreciation = depreciableAmount / (asset.useful_life_years * 12);
+        const totalMonthsElapsed = yearsElapsed * 12;
+        const monthsRemaining = Math.max(0, (asset.useful_life_years * 12) - totalMonthsElapsed);
+        const yearsRemaining = (monthsRemaining / 12).toFixed(1);
+
+        document.getElementById('detailPurchaseSupplier').textContent = asset.supplier_name || '-';
+        document.getElementById('detailPurchaseDate').textContent = new Date(asset.acquisition_date).toLocaleDateString('es-DO');
+        document.getElementById('detailPurchaseCost').textContent = `RD$ ${parseFloat(asset.acquisition_cost).toLocaleString('es-DO', {maximumFractionDigits: 2})}`;
+        document.getElementById('detailInvoiceNumber').textContent = asset.invoice_filename || '-';
+        document.getElementById('detailFiscalReceipt').textContent = asset.fiscal_receipt_number || '-';
+
+        // Mostrar link de factura si existe
+        if (asset.invoice_filename) {
+            document.getElementById('detailInvoiceFile').innerHTML = `<a href="#" style="color: #003D7A; text-decoration: underline;">📄 ${asset.invoice_filename}</a>`;
+        } else {
+            document.getElementById('detailInvoiceFile').textContent = 'Sin documento adjunto';
+        }
+
+        document.getElementById('detailResidualPercent').textContent = `${asset.residual_value_percent}%`;
+        document.getElementById('detailResidualValue').textContent = `RD$ ${residualValue.toLocaleString('es-DO', {maximumFractionDigits: 2})}`;
+        document.getElementById('detailDepreciationYears').textContent = asset.useful_life_years;
+
         // Llenar auditoría
         document.getElementById('detailCreatedAt').textContent = new Date(asset.created_at).toLocaleString('es-DO');
         document.getElementById('detailUpdatedAt').textContent = new Date(asset.updated_at).toLocaleString('es-DO');
