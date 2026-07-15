@@ -114,190 +114,224 @@ def get_asset(asset_id):
 @assets_bp.route('', methods=['POST'])
 def create_asset():
     """Crear nuevo activo"""
-    # Manejo de FormData (con archivos) o JSON
-    if request.is_json:
-        data = request.get_json()
-    else:
-        data = request.form.to_dict()
+    try:
+        # Manejo de FormData (con archivos) o JSON
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
 
-    invoice_filename = None
+        if not data:
+            return jsonify({'success': False, 'message': 'Datos vacíos'}), 400
 
-    # Manejar archivo de factura si existe
-    if 'invoice_file' in request.files:
-        file = request.files['invoice_file']
-        if file and file.filename:
-            try:
-                import os
-                from werkzeug.utils import secure_filename
+        invoice_filename = None
 
-                upload_folder = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', 'invoices')
-                os.makedirs(upload_folder, exist_ok=True)
+        # Manejar archivo de factura si existe
+        if 'invoice_file' in request.files:
+            file = request.files['invoice_file']
+            if file and file.filename:
+                try:
+                    import os
+                    from werkzeug.utils import secure_filename
 
-                # Guardar con nombre seguro
-                timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
-                filename = secure_filename(f"{timestamp}_{file.filename}")
-                filepath = os.path.join(upload_folder, filename)
-                file.save(filepath)
-                invoice_filename = filename
-            except Exception as e:
-                logger.error(f"Error saving invoice: {e}")
+                    upload_folder = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', 'invoices')
+                    os.makedirs(upload_folder, exist_ok=True)
 
-    # Validación
-    required_fields = ['description', 'category_id', 'acquisition_date', 'acquisition_cost', 'useful_life_years']
-    if not all(field in data for field in required_fields):
-        return jsonify({'success': False, 'message': 'Campos requeridos faltantes'}), 400
+                    # Guardar con nombre seguro
+                    timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+                    filename = secure_filename(f"{timestamp}_{file.filename}")
+                    filepath = os.path.join(upload_folder, filename)
+                    file.save(filepath)
+                    invoice_filename = filename
+                except Exception as e:
+                    return jsonify({'success': False, 'message': f'Error guardando factura: {str(e)}'}), 400
 
-    # Verificar categoría
-    category = AssetCategory.query.get_or_404(data['category_id'])
+        # Validación
+        required_fields = ['description', 'category_id', 'acquisition_date', 'acquisition_cost', 'useful_life_years']
+        if not all(field in data for field in required_fields):
+            return jsonify({'success': False, 'message': 'Campos requeridos faltantes'}), 400
 
-    # Obtener departamento si existe
-    department_id = None
-    if data.get('department'):
-        dept = Department.query.filter_by(name=data.get('department')).first()
-        if dept:
-            department_id = dept.id
+        # Verificar categoría
+        category = AssetCategory.query.get(data['category_id'])
+        if not category:
+            return jsonify({'success': False, 'message': 'Categoría no encontrada'}), 404
 
-    # Obtener localidad si existe
-    location_id = None
-    if data.get('location_name'):
-        from backend.models import Location
-        loc = Location.query.filter_by(name=data.get('location_name')).first()
-        if loc:
-            location_id = loc.id
+        # Obtener departamento si existe
+        department_id = None
+        if data.get('department'):
+            dept = Department.query.filter_by(name=data.get('department')).first()
+            if dept:
+                department_id = dept.id
 
-    # Crear activo
-    asset = Asset(
-        description=data['description'],
-        category_id=data['category_id'],
-        acquisition_date=datetime.fromisoformat(data['acquisition_date']).date(),
-        acquisition_cost=Decimal(str(data['acquisition_cost'])),
-        residual_value_percent=Decimal(str(data.get('residual_value_percent', 10))),
-        useful_life_years=data['useful_life_years'],
-        location=data.get('location', ''),
-        location_id=location_id,
-        department_id=department_id,
-        responsible=data.get('responsible', ''),
-        serial_number=data.get('serial_number'),
-        supplier_name=data.get('supplier_name', ''),
-        fiscal_receipt_number=data.get('fiscal_receipt_number', ''),
-        acquisition_year=int(data.get('acquisition_year', datetime.now().year)),
-        invoice_filename=invoice_filename,
-        status=data.get('status', 'active'),
-        warranty=data.get('warranty', ''),
-        asset_user=data.get('asset_user', ''),
-        color=data.get('color', ''),
-        year_manufactured=int(data.get('year_manufactured', 0)) if data.get('year_manufactured') else None,
-        brand=data.get('brand', ''),
-        model=data.get('model', ''),
-        chassis=data.get('chassis', ''),
-        plate_number=data.get('plate_number', ''),
-        equipment_serial=data.get('equipment_serial', ''),
-        equipment_supplier=data.get('equipment_supplier', ''),
-        physical_location=data.get('physical_location', ''),
-        asset_condition=data.get('asset_condition', 'good'),
-        created_by=1,
-        notes=data.get('notes', '')
-    )
+        # Obtener localidad si existe
+        location_id = None
+        if data.get('location_name'):
+            from backend.models import Location
+            loc = Location.query.filter_by(name=data.get('location_name')).first()
+            if loc:
+                location_id = loc.id
 
-    db.session.add(asset)
-    db.session.commit()
+        # Crear activo
+        asset = Asset(
+            description=data['description'],
+            category_id=data['category_id'],
+            acquisition_date=datetime.fromisoformat(data['acquisition_date']).date(),
+            acquisition_cost=Decimal(str(data['acquisition_cost'])),
+            residual_value_percent=Decimal(str(data.get('residual_value_percent', 10))),
+            useful_life_years=data['useful_life_years'],
+            location=data.get('location', ''),
+            location_id=location_id,
+            department_id=department_id,
+            responsible=data.get('responsible', ''),
+            serial_number=data.get('serial_number'),
+            supplier_name=data.get('supplier_name', ''),
+            fiscal_receipt_number=data.get('fiscal_receipt_number', ''),
+            acquisition_year=int(data.get('acquisition_year', datetime.now().year)),
+            invoice_filename=invoice_filename,
+            status=data.get('status', 'active'),
+            warranty=data.get('warranty', ''),
+            asset_user=data.get('asset_user', ''),
+            color=data.get('color', ''),
+            year_manufactured=int(data.get('year_manufactured', 0)) if data.get('year_manufactured') else None,
+            brand=data.get('brand', ''),
+            model=data.get('model', ''),
+            chassis=data.get('chassis', ''),
+            plate_number=data.get('plate_number', ''),
+            equipment_serial=data.get('equipment_serial', ''),
+            equipment_supplier=data.get('equipment_supplier', ''),
+            physical_location=data.get('physical_location', ''),
+            asset_condition=data.get('asset_condition', 'good'),
+            created_by=1,
+            notes=data.get('notes', '')
+        )
 
-    # Registrar en auditoría
-    audit = AuditLog(
-        user_id=1,
-        entity_type='Asset',
-        entity_id=asset.id,
-        action='create',
-        new_value={'description': asset.description, 'code': asset.code},
-        description=f'Activo creado: {asset.code} - {asset.description}'
-    )
-    db.session.add(audit)
-    db.session.commit()
+        db.session.add(asset)
+        db.session.commit()
 
-    return jsonify({
-        'success': True,
-        'message': 'Activo creado exitosamente',
-        'asset': serialize_asset(asset)
-    }), 201
+        # Registrar en auditoría
+        audit = AuditLog(
+            user_id=1,
+            entity_type='Asset',
+            entity_id=asset.id,
+            action='create',
+            new_value={'description': asset.description, 'code': asset.code},
+            description=f'Activo creado: {asset.code} - {asset.description}'
+        )
+        db.session.add(audit)
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': 'Activo creado exitosamente',
+            'asset': serialize_asset(asset)
+        }), 201
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error de validación: {str(e)}'}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error creando activo: {str(e)}'}), 500
 
 
 @assets_bp.route('/<int:asset_id>', methods=['PUT'])
 def update_asset(asset_id):
     """Actualizar activo"""
-    asset = Asset.query.get_or_404(asset_id)
-    data = request.get_json()
+    try:
+        asset = Asset.query.get_or_404(asset_id)
+        data = request.get_json()
 
-    # Guardar valores anteriores
-    old_values = {}
+        if not data:
+            return jsonify({'success': False, 'message': 'Datos vacíos'}), 400
 
-    # Campos actualizables
-    updatable_fields = [
-        'description', 'location', 'responsible', 'status', 'notes', 'category_id',
-        'acquisition_cost', 'useful_life_years', 'warranty', 'asset_user', 'color',
-        'year_manufactured', 'brand', 'model', 'chassis', 'plate_number',
-        'equipment_serial', 'equipment_supplier', 'physical_location', 'asset_condition'
-    ]
-    for field in updatable_fields:
-        if field in data:
-            old_values[field] = getattr(asset, field)
-            if field == 'category_id':
-                # Validar que la categoría exista
-                category = AssetCategory.query.get_or_404(data[field])
-                setattr(asset, field, data[field])
-            elif field == 'acquisition_cost':
-                setattr(asset, field, Decimal(str(data[field])))
-            elif field == 'year_manufactured':
-                value = int(data[field]) if data[field] else None
-                setattr(asset, field, value)
-            else:
-                setattr(asset, field, data[field])
+        # Guardar valores anteriores
+        old_values = {}
 
-    # Manejar departamento especialmente
-    if 'department' in data:
-        old_values['department'] = asset.department_obj.name if asset.department_obj else None
-        if data.get('department'):
-            dept = Department.query.filter_by(name=data.get('department')).first()
-            if dept:
-                asset.department_id = dept.id
+        # Campos actualizables
+        updatable_fields = [
+            'description', 'location', 'responsible', 'status', 'notes', 'category_id',
+            'acquisition_cost', 'useful_life_years', 'warranty', 'asset_user', 'color',
+            'year_manufactured', 'brand', 'model', 'chassis', 'plate_number',
+            'equipment_serial', 'equipment_supplier', 'physical_location', 'asset_condition'
+        ]
+        for field in updatable_fields:
+            if field in data:
+                old_values[field] = getattr(asset, field)
+                if field == 'category_id':
+                    # Validar que la categoría exista
+                    if not data[field]:
+                        return jsonify({'success': False, 'message': 'Categoría requerida'}), 400
+                    category = AssetCategory.query.get(data[field])
+                    if not category:
+                        return jsonify({'success': False, 'message': 'Categoría no encontrada'}), 404
+                    setattr(asset, field, data[field])
+                elif field == 'acquisition_cost':
+                    try:
+                        setattr(asset, field, Decimal(str(data[field])))
+                    except:
+                        return jsonify({'success': False, 'message': 'Costo de adquisición inválido'}), 400
+                elif field == 'year_manufactured':
+                    try:
+                        value = int(data[field]) if data[field] else None
+                        setattr(asset, field, value)
+                    except:
+                        return jsonify({'success': False, 'message': 'Año de manufactura debe ser un número'}), 400
+                else:
+                    setattr(asset, field, data[field])
+
+        # Manejar departamento especialmente
+        if 'department' in data:
+            old_values['department'] = asset.department_obj.name if asset.department_obj else None
+            if data.get('department'):
+                dept = Department.query.filter_by(name=data.get('department')).first()
+                if dept:
+                    asset.department_id = dept.id
+                else:
+                    asset.department_id = None
             else:
                 asset.department_id = None
-        else:
-            asset.department_id = None
 
-    # Manejar localidad especialmente
-    if 'location_name' in data:
-        old_values['location_name'] = asset.location_obj.name if asset.location_obj else None
-        if data.get('location_name'):
-            from backend.models import Location
-            loc = Location.query.filter_by(name=data.get('location_name')).first()
-            if loc:
-                asset.location_id = loc.id
+        # Manejar localidad especialmente
+        if 'location_name' in data:
+            old_values['location_name'] = asset.location_obj.name if asset.location_obj else None
+            if data.get('location_name'):
+                from backend.models import Location
+                loc = Location.query.filter_by(name=data.get('location_name')).first()
+                if loc:
+                    asset.location_id = loc.id
+                else:
+                    asset.location_id = None
             else:
                 asset.location_id = None
-        else:
-            asset.location_id = None
 
-    asset.updated_at = datetime.utcnow()
-    db.session.commit()
+        asset.updated_at = datetime.utcnow()
+        db.session.commit()
 
-    # Registrar en auditoría
-    audit = AuditLog(
-        user_id=1,
-        entity_type='Asset',
-        entity_id=asset.id,
-        action='update',
-        old_value=old_values,
-        new_value={k: data[k] for k in (updatable_fields + ['department', 'location_name']) if k in data},
-        description=f'Activo actualizado: {asset.code}'
-    )
-    db.session.add(audit)
-    db.session.commit()
+        # Registrar en auditoría
+        audit = AuditLog(
+            user_id=1,
+            entity_type='Asset',
+            entity_id=asset.id,
+            action='update',
+            old_value=old_values,
+            new_value={k: data[k] for k in (updatable_fields + ['department', 'location_name']) if k in data},
+            description=f'Activo actualizado: {asset.code}'
+        )
+        db.session.add(audit)
+        db.session.commit()
 
-    return jsonify({
-        'success': True,
-        'message': 'Activo actualizado',
-        'asset': serialize_asset(asset)
-    }), 200
+        return jsonify({
+            'success': True,
+            'message': 'Activo actualizado',
+            'asset': serialize_asset(asset)
+        }), 200
+
+    except ValueError as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error de validación: {str(e)}'}), 400
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error actualizando activo: {str(e)}'}), 500
 
 
 @assets_bp.route('/<int:asset_id>', methods=['DELETE'])
