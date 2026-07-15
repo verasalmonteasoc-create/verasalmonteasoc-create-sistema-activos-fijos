@@ -204,6 +204,7 @@ function initNavigation() {
             document.getElementById('pageTitle').textContent = link.textContent.trim();
 
             // Recargar datos
+            if (page === 'search-assets') initSearchAssets();
             if (page === 'accounting') loadAccounts();
             if (page === 'categories') loadCategories();
             if (page === 'departments') loadDepartments();
@@ -1033,6 +1034,200 @@ function setupFormHandlers() {
             }
         });
     });
+}
+
+// CONSULTA Y BÚSQUEDA DE ACTIVOS
+let allAssetsForSearch = [];
+
+async function initSearchAssets() {
+    try {
+        const [assetsRes, categoriesRes, deptsRes] = await Promise.all([
+            fetch('/api/assets'),
+            fetch('/api/categories'),
+            fetch('/api/departments')
+        ]);
+
+        allAssetsForSearch = await assetsRes.json();
+        const categories = await categoriesRes.json();
+        const departments = await deptsRes.json();
+
+        // Poblar dropdowns de búsqueda
+        if (categories.success) {
+            const catSelect = document.getElementById('searchCategory');
+            catSelect.innerHTML = '<option value="">Todas las Categorías</option>' +
+                categories.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        }
+
+        if (departments.success) {
+            const deptSelect = document.getElementById('searchDepartment');
+            deptSelect.innerHTML = '<option value="">Todos los Departamentos</option>' +
+                departments.departments.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+        }
+
+        searchAssets();
+    } catch (error) {
+        console.error('Error inicializando búsqueda:', error);
+    }
+}
+
+async function searchAssets() {
+    if (!allAssetsForSearch.success) return;
+
+    const searchTerm = (document.getElementById('searchInput')?.value || '').toLowerCase();
+    const categoryId = document.getElementById('searchCategory')?.value || '';
+    const department = document.getElementById('searchDepartment')?.value || '';
+    const status = document.getElementById('searchStatus')?.value || '';
+
+    let results = allAssetsForSearch.assets.filter(asset => {
+        const matchSearch = !searchTerm ||
+            asset.code.toLowerCase().includes(searchTerm) ||
+            asset.description.toLowerCase().includes(searchTerm);
+        const matchCat = !categoryId || asset.category.id == categoryId;
+        const matchDept = !department || asset.department === department;
+        const matchStatus = !status || asset.status === status;
+        return matchSearch && matchCat && matchDept && matchStatus;
+    });
+
+    const tbody = document.getElementById('searchResultsTable');
+    if (results.length > 0) {
+        tbody.innerHTML = results.map(asset => `
+            <tr>
+                <td>${asset.code}</td>
+                <td>${asset.description}</td>
+                <td>${asset.category.name}</td>
+                <td>${asset.department || '-'}</td>
+                <td>RD$ ${parseFloat(asset.acquisition_cost).toLocaleString('es-DO', {maximumFractionDigits: 0})}</td>
+                <td><span style="padding: 5px 10px; border-radius: 3px; background: ${asset.status === 'active' ? '#28a745' : '#dc3545'}; color: white;">${asset.status === 'active' ? 'Activo' : 'Inactivo'}</span></td>
+                <td><button class="btn" onclick="viewAssetDetails(${asset.id})">Ver Detalles</button></td>
+            </tr>
+        `).join('');
+    } else {
+        tbody.innerHTML = '<tr><td colspan="7">No se encontraron activos</td></tr>';
+    }
+}
+
+async function viewAssetDetails(assetId) {
+    try {
+        const res = await fetch(`/api/assets/${assetId}`);
+        const data = await res.json();
+
+        if (!data.success) {
+            alert('Error al cargar los detalles');
+            return;
+        }
+
+        const asset = data.asset;
+        const today = new Date();
+        const acqDate = new Date(asset.acquisition_date);
+        const yearsElapsed = (today - acqDate) / (1000 * 60 * 60 * 24 * 365.25);
+        const accumDepreciation = asset.acquisition_cost * (asset.category.depreciation_rate / 100) * Math.max(0, yearsElapsed);
+        const netValue = asset.acquisition_cost - accumDepreciation;
+        const deprecPercent = ((accumDepreciation / asset.acquisition_cost) * 100).toFixed(1);
+
+        // Llenar información básica
+        document.getElementById('detailCode').textContent = asset.code;
+        document.getElementById('detailDesc').textContent = asset.description;
+        document.getElementById('detailCategory').textContent = asset.category.name;
+        document.getElementById('detailDept').textContent = asset.department || '-';
+        document.getElementById('detailLocation').textContent = asset.location_name || '-';
+        document.getElementById('detailStatus').textContent = asset.status === 'active' ? 'Activo' : 'Inactivo';
+
+        // Llenar información financiera
+        document.getElementById('detailCost').textContent = `RD$ ${parseFloat(asset.acquisition_cost).toLocaleString('es-DO', {maximumFractionDigits: 2})}`;
+        document.getElementById('detailAcqDate').textContent = new Date(asset.acquisition_date).toLocaleDateString('es-DO');
+        document.getElementById('detailUsefulLife').textContent = `${asset.useful_life_years} años`;
+        document.getElementById('detailAccumDepreciation').textContent = `RD$ ${accumDepreciation.toLocaleString('es-DO', {maximumFractionDigits: 2})}`;
+        document.getElementById('detailNetValue').textContent = `RD$ ${netValue.toLocaleString('es-DO', {maximumFractionDigits: 2})}`;
+        document.getElementById('detailDeprecPercent').textContent = `${deprecPercent}%`;
+
+        // Llenar información técnica
+        document.getElementById('detailBrand').textContent = asset.brand || '-';
+        document.getElementById('detailModel').textContent = asset.model || '-';
+        document.getElementById('detailYear').textContent = asset.year_manufactured || '-';
+        document.getElementById('detailColor').textContent = asset.color || '-';
+        document.getElementById('detailUser').textContent = asset.asset_user || '-';
+        document.getElementById('detailPhysicalLoc').textContent = asset.physical_location || '-';
+        document.getElementById('detailWarranty').textContent = asset.warranty || '-';
+        document.getElementById('detailCondition').textContent = asset.asset_condition || '-';
+        document.getElementById('detailSupplier').textContent = asset.supplier_name || '-';
+
+        // Mostrar información específica según categoría
+        const vehicleEquipInfo = document.getElementById('vehicleEquipmentInfo');
+        const vehicleFields = document.getElementById('vehicleFields');
+        const equipmentFields = document.getElementById('equipmentFields');
+
+        if (asset.plate_number || asset.chassis) {
+            vehicleEquipInfo.style.display = 'block';
+            vehicleFields.style.display = 'block';
+            equipmentFields.style.display = 'none';
+            document.getElementById('detailPlate').textContent = asset.plate_number || '-';
+            document.getElementById('detailChassis').textContent = asset.chassis || '-';
+        } else if (asset.equipment_serial || asset.equipment_supplier) {
+            vehicleEquipInfo.style.display = 'block';
+            vehicleFields.style.display = 'none';
+            equipmentFields.style.display = 'block';
+            document.getElementById('detailEquipSerial').textContent = asset.equipment_serial || '-';
+            document.getElementById('detailEquipSupplier').textContent = asset.equipment_supplier || '-';
+        } else {
+            vehicleEquipInfo.style.display = 'none';
+        }
+
+        // Llenar auditoría
+        document.getElementById('detailCreatedAt').textContent = new Date(asset.created_at).toLocaleString('es-DO');
+        document.getElementById('detailUpdatedAt').textContent = new Date(asset.updated_at).toLocaleString('es-DO');
+
+        // Guardar ID para acciones
+        document.getElementById('assetDetailsModal').dataset.assetId = assetId;
+
+        // Abrir modal
+        document.getElementById('assetDetailsModal').classList.add('active');
+    } catch (error) {
+        console.error('Error:', error);
+        alert('Error al cargar los detalles del activo');
+    }
+}
+
+function closeAssetDetailsModal() {
+    document.getElementById('assetDetailsModal').classList.remove('active');
+}
+
+function editAssetFromDetails() {
+    const assetId = document.getElementById('assetDetailsModal').dataset.assetId;
+    closeAssetDetailsModal();
+    // Buscar el asset en la tabla de activos y abrirlo
+    const allAssets = document.querySelectorAll('#assetsTable tr');
+    let found = false;
+    allAssets.forEach(row => {
+        const code = row.textContent;
+        if (code.includes(document.getElementById('detailCode').textContent)) {
+            const editBtn = row.querySelector('button:contains("Editar")');
+            if (editBtn) {
+                editBtn.click();
+                found = true;
+            }
+        }
+    });
+    if (!found) {
+        alert('Abre la sección "Activos" para editar este activo');
+    }
+}
+
+function deleteAssetFromDetails() {
+    const assetId = document.getElementById('assetDetailsModal').dataset.assetId;
+    if (confirm('¿Eliminar este activo?')) {
+        fetch(`/api/assets/${assetId}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✓ Activo eliminado');
+                    closeAssetDetailsModal();
+                    searchAssets();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => alert('Error: ' + error.message));
+    }
 }
 
 console.log('✓ App script loaded');
