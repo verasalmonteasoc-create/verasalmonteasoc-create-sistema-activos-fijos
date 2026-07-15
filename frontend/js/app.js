@@ -414,7 +414,7 @@ async function loadCategories() {
                     <td>${cat.depreciation_rate}%</td>
                     <td>${cat.description || '-'}</td>
                     <td>
-                        <button class="btn" onclick="openEditCategoryModal(${cat.id}, '${cat.name.replace(/'/g, "\\'")}', ${cat.depreciation_rate}, '${(cat.description || '').replace(/'/g, "\\'")}')" >Editar</button>
+                        <button class="btn" onclick="openEditCategoryModal(${cat.id}, '${cat.name.replace(/'/g, "\\'")}', ${cat.depreciation_rate}, '${(cat.description || '').replace(/'/g, "\\'")}'${cat.asset_account ? `, '${cat.asset_account}'` : ''}, '${cat.accumulated_depreciation_account || ''}', '${cat.depreciation_expense_account || ''}')" >Editar</button>
                         <button class="btn btn-danger" onclick="deleteCategory(${cat.id})">Eliminar</button>
                     </td>
                 </tr>
@@ -433,7 +433,26 @@ async function loadCategories() {
     }
 }
 
-function openCategoryModal() {
+async function openCategoryModal() {
+    // Cargar cuentas contables
+    try {
+        const res = await fetch('/api/accounting/accounts');
+        const data = await res.json();
+
+        if (data.success && data.accounts.length > 0) {
+            const accountOptions = '<option value="">Seleccionar cuenta...</option>' +
+                data.accounts.map(acc => `<option value="${acc.code}">${acc.code} - ${acc.name}</option>`).join('');
+
+            document.getElementById('categoryAssetAccount').innerHTML = accountOptions;
+            document.getElementById('categoryAccumDeprecAccount').innerHTML = accountOptions;
+            document.getElementById('categoryDeprecExpenseAccount').innerHTML = accountOptions;
+        }
+    } catch (error) {
+        console.error('Error cargando cuentas:', error);
+    }
+
+    // Limpiar formulario
+    document.getElementById('categoryForm').reset();
     document.getElementById('categoryModal').classList.add('active');
 }
 
@@ -445,12 +464,23 @@ async function submitCategory(e) {
     e.preventDefault();
     const name = document.getElementById('categoryName').value;
     const rate = document.getElementById('categoryRate').value;
+    const description = document.getElementById('categoryDesc').value;
+    const assetAccount = document.getElementById('categoryAssetAccount').value;
+    const accumDeprecAccount = document.getElementById('categoryAccumDeprecAccount').value;
+    const deprecExpenseAccount = document.getElementById('categoryDeprecExpenseAccount').value;
 
     try {
         const res = await fetch('/api/categories', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, depreciation_rate: rate })
+            body: JSON.stringify({
+                name,
+                depreciation_rate: rate,
+                description,
+                asset_account: assetAccount,
+                accumulated_depreciation_account: accumDeprecAccount,
+                depreciation_expense_account: deprecExpenseAccount
+            })
         });
         const data = await res.json();
 
@@ -467,7 +497,29 @@ async function submitCategory(e) {
     }
 }
 
-function openEditCategoryModal(id, name, rate, desc) {
+async function openEditCategoryModal(id, name, rate, desc, assetAcc, accumAcc, expenseAcc) {
+    // Cargar cuentas contables
+    try {
+        const res = await fetch('/api/accounting/accounts');
+        const data = await res.json();
+
+        if (data.success && data.accounts.length > 0) {
+            const accountOptions = '<option value="">Seleccionar cuenta...</option>' +
+                data.accounts.map(acc => `<option value="${acc.code}">${acc.code} - ${acc.name}</option>`).join('');
+
+            document.getElementById('editCategoryAssetAccount').innerHTML = accountOptions;
+            document.getElementById('editCategoryAccumDeprecAccount').innerHTML = accountOptions;
+            document.getElementById('editCategoryDeprecExpenseAccount').innerHTML = accountOptions;
+
+            // Seleccionar las cuentas vinculadas
+            if (assetAcc) document.getElementById('editCategoryAssetAccount').value = assetAcc;
+            if (accumAcc) document.getElementById('editCategoryAccumDeprecAccount').value = accumAcc;
+            if (expenseAcc) document.getElementById('editCategoryDeprecExpenseAccount').value = expenseAcc;
+        }
+    } catch (error) {
+        console.error('Error cargando cuentas:', error);
+    }
+
     document.getElementById('editCategoryId').value = id;
     document.getElementById('editCategoryName').value = name;
     document.getElementById('editCategoryRate').value = rate;
@@ -485,12 +537,22 @@ async function submitEditCategory(e) {
     const name = document.getElementById('editCategoryName').value;
     const rate = document.getElementById('editCategoryRate').value;
     const desc = document.getElementById('editCategoryDesc').value;
+    const assetAccount = document.getElementById('editCategoryAssetAccount').value;
+    const accumDeprecAccount = document.getElementById('editCategoryAccumDeprecAccount').value;
+    const deprecExpenseAccount = document.getElementById('editCategoryDeprecExpenseAccount').value;
 
     try {
         const res = await fetch(`/api/categories/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, depreciation_rate: rate, description: desc })
+            body: JSON.stringify({
+                name,
+                depreciation_rate: rate,
+                description: desc,
+                asset_account: assetAccount,
+                accumulated_depreciation_account: accumDeprecAccount,
+                depreciation_expense_account: deprecExpenseAccount
+            })
         });
         const data = await res.json();
 

@@ -377,17 +377,41 @@
     </div>
 
     <div id="categoryModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
             <span class="close-modal" onclick="closeCategoryModal()">&times;</span>
             <h2>Nueva Categoría</h2>
             <form id="categoryForm">
                 <div class="form-group">
-                    <label>Nombre</label>
+                    <label>Nombre *</label>
                     <input type="text" id="categoryName" required>
                 </div>
                 <div class="form-group">
-                    <label>Tasa Depreciación (%)</label>
+                    <label>Tasa Depreciación (%) *</label>
                     <input type="number" id="categoryRate" step="0.01" required>
+                </div>
+                <div class="form-group">
+                    <label>Descripción</label>
+                    <textarea id="categoryDesc" placeholder="Ej: Automóviles, camiones, muebles de oficina..."></textarea>
+                </div>
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">
+                <h4 style="color: #003D7A; margin-bottom: 15px;">Vincular Cuentas Contables</h4>
+                <div class="form-group">
+                    <label>Cuenta de Activo <small style="color: #999;">(ej: 1100 Activos Fijos)</small></label>
+                    <select id="categoryAssetAccount">
+                        <option value="">Seleccionar cuenta...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cuenta de Depreciación Acumulada <small style="color: #999;">(ej: 1900 Dep. Acumulada)</small></label>
+                    <select id="categoryAccumDeprecAccount">
+                        <option value="">Seleccionar cuenta...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cuenta de Gasto de Depreciación <small style="color: #999;">(ej: 5100 Gasto Deprec)</small></label>
+                    <select id="categoryDeprecExpenseAccount">
+                        <option value="">Seleccionar cuenta...</option>
+                    </select>
                 </div>
                 <button type="submit" class="btn btn-success">Crear</button>
             </form>
@@ -490,22 +514,42 @@
     </div>
 
     <div id="editCategoryModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
             <span class="close-modal" onclick="closeEditCategoryModal()">&times;</span>
             <h2>Editar Categoría</h2>
             <form id="editCategoryForm">
                 <input type="hidden" id="editCategoryId">
                 <div class="form-group">
-                    <label>Nombre</label>
+                    <label>Nombre *</label>
                     <input type="text" id="editCategoryName" required>
                 </div>
                 <div class="form-group">
-                    <label>Tasa Depreciación (%)</label>
+                    <label>Tasa Depreciación (%) *</label>
                     <input type="number" id="editCategoryRate" step="0.01" required>
                 </div>
                 <div class="form-group">
                     <label>Descripción</label>
                     <textarea id="editCategoryDesc"></textarea>
+                </div>
+                <hr style="margin: 20px 0; border: none; border-top: 1px solid #ddd;">
+                <h4 style="color: #003D7A; margin-bottom: 15px;">Vincular Cuentas Contables</h4>
+                <div class="form-group">
+                    <label>Cuenta de Activo <small style="color: #999;">(ej: 1100 Activos Fijos)</small></label>
+                    <select id="editCategoryAssetAccount">
+                        <option value="">Seleccionar cuenta...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cuenta de Depreciación Acumulada <small style="color: #999;">(ej: 1900 Dep. Acumulada)</small></label>
+                    <select id="editCategoryAccumDeprecAccount">
+                        <option value="">Seleccionar cuenta...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cuenta de Gasto de Depreciación <small style="color: #999;">(ej: 5100 Gasto Deprec)</small></label>
+                    <select id="editCategoryDeprecExpenseAccount">
+                        <option value="">Seleccionar cuenta...</option>
+                    </select>
                 </div>
                 <button type="submit" class="btn btn-success">Guardar Cambios</button>
             </form>
