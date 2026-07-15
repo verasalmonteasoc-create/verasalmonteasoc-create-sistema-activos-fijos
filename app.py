@@ -1,16 +1,21 @@
 """
 Aplicación Flask - Sistema de Gestión de Activos Fijos
 """
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_login import LoginManager
+from sqlalchemy import text
 from datetime import datetime
 import logging
 import os
+from dotenv import load_dotenv
+
+# Cargar variables de entorno del archivo .env
+load_dotenv()
 
 # Importaciones locales
-from config import get_config
-from models import db, User, Asset, AssetCategory, DepreciationRecord, AuditLog
+from backend.config import get_config
+from backend.models import db, User, Asset, AssetCategory, DepreciationRecord, AuditLog
 
 # Configurar logging
 logging.basicConfig(
@@ -22,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 def create_app(config=None):
     """Factory function para crear la aplicación Flask"""
-    app = Flask(__name__)
+    # Obtener ruta del frontend
+    frontend_path = os.path.join(os.path.dirname(__file__), 'frontend')
+    app = Flask(__name__, static_folder=frontend_path, static_url_path='')
 
     # Cargar configuración
     if config is None:
@@ -33,6 +40,7 @@ def create_app(config=None):
     db.init_app(app)
     login_manager = LoginManager()
     login_manager.init_app(app)
+    login_manager.login_view = None
     CORS(app, origins=app.config['CORS_ORIGINS'])
 
     # Registrar blueprints
@@ -81,7 +89,7 @@ def create_app(config=None):
     @app.route('/health', methods=['GET'])
     def health():
         try:
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))
             return jsonify({
                 'status': 'healthy',
                 'timestamp': datetime.utcnow().isoformat(),
@@ -94,20 +102,35 @@ def create_app(config=None):
                 'database': 'disconnected'
             }), 503
 
+    # Servir archivos estáticos
+    @app.route('/')
+    def index():
+        return send_from_directory(app.static_folder, 'index.html')
+
+    @app.route('/<path:filename>')
+    def serve_static(filename):
+        return send_from_directory(app.static_folder, filename)
+
     return app
 
 
 def register_blueprints(app):
     """Registrar blueprints de rutas"""
-    from routes.auth import auth_bp
-    from routes.assets import assets_bp
-    from routes.categories import categories_bp
-    from routes.reports import reports_bp
+    from backend.routes.auth import auth_bp
+    from backend.routes.assets import assets_bp
+    from backend.routes.categories import categories_bp
+    from backend.routes.departments import departments_bp
+    from backend.routes.locations import locations_bp
+    from backend.routes.reports import reports_bp
+    from backend.routes.accounting import accounting_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
     app.register_blueprint(categories_bp)
+    app.register_blueprint(departments_bp)
+    app.register_blueprint(locations_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(accounting_bp)
 
 
 # Crear aplicación

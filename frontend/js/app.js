@@ -414,7 +414,7 @@ async function loadCategories() {
                     <td>${cat.depreciation_rate}%</td>
                     <td>${cat.description || '-'}</td>
                     <td>
-                        <button class="btn" onclick="openEditCategoryModal(${cat.id}, '${cat.name.replace(/'/g, "\\'")}', ${cat.depreciation_rate}, '${(cat.description || '').replace(/'/g, "\\'")}'${cat.asset_account ? `, '${cat.asset_account}'` : ''}, '${cat.accumulated_depreciation_account || ''}', '${cat.depreciation_expense_account || ''}')" >Editar</button>
+                        <button class="btn" onclick="openEditCategoryModal(${cat.id}, '${cat.name.replace(/'/g, "\\'")}', ${cat.depreciation_rate}, '${(cat.description || '').replace(/'/g, "\\'")}'${cat.asset_account ? `, '${cat.asset_account}'` : `, ''`}, '${cat.accumulated_depreciation_account || ''}', '${cat.depreciation_expense_account || ''}')" >Editar</button>
                         <button class="btn btn-danger" onclick="deleteCategory(${cat.id})">Eliminar</button>
                     </td>
                 </tr>

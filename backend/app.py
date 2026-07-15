@@ -1,7 +1,7 @@
 """
 Aplicación Flask - Sistema de Gestión de Activos Fijos
 """
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_login import LoginManager
 from sqlalchemy import text
@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 
 def create_app(config=None):
     """Factory function para crear la aplicación Flask"""
-    app = Flask(__name__)
+    # Obtener ruta del frontend
+    frontend_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
+    app = Flask(__name__, static_folder=frontend_path, static_url_path='')
 
     # Cargar configuración
     if config is None:
@@ -95,6 +97,15 @@ def create_app(config=None):
                 'status': 'unhealthy',
                 'database': 'disconnected'
             }), 503
+
+    # Servir archivos estáticos
+    @app.route('/')
+    def index():
+        return send_from_directory(app.static_folder, 'index.html')
+
+    @app.route('/<path:filename>')
+    def serve_static(filename):
+        return send_from_directory(app.static_folder, filename)
 
     return app
 

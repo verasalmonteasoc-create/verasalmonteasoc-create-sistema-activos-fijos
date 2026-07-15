@@ -4,13 +4,19 @@ from datetime import timedelta
 class Config:
     """Configuración base"""
     # Base de datos
-    DB_HOST = os.getenv('DB_HOST', 'localhost')
-    DB_PORT = os.getenv('DB_PORT', 5432)
-    DB_NAME = os.getenv('DB_NAME', 'asset_management')
-    DB_USER = os.getenv('DB_USER', 'postgres')
-    DB_PASSWORD = os.getenv('DB_PASSWORD', 'postgres123')
+    DB_TYPE = os.getenv('DB_TYPE', 'postgresql')
 
-    SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+    if DB_TYPE == 'sqlite':
+        DB_PATH = os.getenv('DB_PATH', 'activos_fijos.db')
+        SQLALCHEMY_DATABASE_URI = f'sqlite:///{DB_PATH}'
+    else:
+        DB_HOST = os.getenv('DB_HOST', 'localhost')
+        DB_PORT = os.getenv('DB_PORT', 5432)
+        DB_NAME = os.getenv('DB_NAME', 'asset_management')
+        DB_USER = os.getenv('DB_USER', 'postgres')
+        DB_PASSWORD = os.getenv('DB_PASSWORD', 'postgres123')
+        SQLALCHEMY_DATABASE_URI = f'postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}'
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ECHO = False
 
