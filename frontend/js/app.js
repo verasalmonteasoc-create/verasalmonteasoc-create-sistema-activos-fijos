@@ -332,6 +332,70 @@ async function deleteAccount(id) {
     }
 }
 
+function openImportAccountsModal() {
+    document.getElementById('importAccountsModal').classList.add('active');
+    document.getElementById('importProgress').style.display = 'none';
+    document.getElementById('importResults').style.display = 'none';
+    document.getElementById('importAccountsFile').value = '';
+}
+
+function closeImportAccountsModal() {
+    document.getElementById('importAccountsModal').classList.remove('active');
+    document.getElementById('importAccountsFile').value = '';
+}
+
+async function submitImportAccounts(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('importAccountsFile');
+    const file = fileInput.files[0];
+
+    if (!file) {
+        alert('Por favor selecciona un archivo');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        document.getElementById('importProgress').style.display = 'block';
+        document.getElementById('importResults').style.display = 'none';
+
+        const res = await fetch('/api/accounting/accounts/import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await res.json();
+        document.getElementById('importProgress').style.display = 'none';
+        document.getElementById('importResults').style.display = 'block';
+
+        if (data.success) {
+            let resultText = `✓ ${data.imported_count} cuentas importadas exitosamente`;
+            if (data.errors && data.errors.length > 0) {
+                resultText += ` (${data.errors.length} errores)`;
+            }
+            document.getElementById('importResultsText').innerHTML = resultText;
+
+            if (data.errors && data.errors.length > 0) {
+                const errorsList = document.getElementById('importErrorsList');
+                errorsList.innerHTML = data.errors.map(err => `<li>${err}</li>`).join('');
+            }
+
+            setTimeout(() => {
+                closeImportAccountsModal();
+                loadAccounts();
+            }, 2000);
+        } else {
+            document.getElementById('importResultsText').innerHTML = `✗ Error: ${data.message}`;
+        }
+    } catch (error) {
+        document.getElementById('importProgress').style.display = 'none';
+        document.getElementById('importResults').style.display = 'block';
+        document.getElementById('importResultsText').innerHTML = `✗ Error: ${error.message}`;
+    }
+}
+
 // CATEGORÍAS
 async function loadCategories() {
     try {
@@ -941,6 +1005,7 @@ function updateFieldsForCategory(selectElementId) {
 function setupFormHandlers() {
     document.getElementById('accountForm').addEventListener('submit', submitAccount);
     document.getElementById('editAccountForm').addEventListener('submit', submitEditAccount);
+    document.getElementById('importAccountsForm').addEventListener('submit', submitImportAccounts);
     document.getElementById('categoryForm').addEventListener('submit', submitCategory);
     document.getElementById('editCategoryForm').addEventListener('submit', submitEditCategory);
     document.getElementById('assetForm').addEventListener('submit', submitAsset);

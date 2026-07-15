@@ -5,6 +5,9 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 from decimal import Decimal
 from backend.models import db, ChartOfAccounts, JournalEntry, Asset, AssetCategory
+import openpyxl
+import os
+from werkzeug.utils import secure_filename
 
 accounting_bp = Blueprint('accounting', __name__, url_prefix='/api/accounting')
 
@@ -120,6 +123,106 @@ def delete_account(account_id):
         'success': True,
         'message': 'Cuenta eliminada'
     }), 200
+
+
+@accounting_bp.route('/accounts/import', methods=['POST'])
+def import_accounts():
+    """Importar catálogo de cuentas desde Excel"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No se proporcionó archivo'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'Archivo vacío'}), 400
+
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'message': 'El archivo debe ser Excel (.xlsx o .xls)'}), 400
+
+    try:
+        # Guardar archivo temporalmente
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+            file.save(tmp.name)
+            temp_path = tmp.name
+
+        # Cargar workbook
+        wb = openpyxl.load_workbook(temp_path)
+        ws = wb.active
+
+        imported_count = 0
+        errors = []
+        row_num = 2  # Saltar encabezado
+
+        # Esperar columnas: A=Código, B=Nombre, C=Tipo, D=Descripción
+        for row in ws.iter_rows(min_row=2, values_only=False):
+            try:
+                code = row[0].value if row[0] else None
+                name = row[1].value if row[1] else None
+                account_type = row[2].value if row[2] else None
+                description = row[3].value if row[3] else None
+
+                # Validar campos obligatorios
+                if not code or not name or not account_type:
+                    errors.append(f'Fila {row_num}: Faltan campos obligatorios (Código, Nombre, Tipo)')
+                    row_num += 1
+                    continue
+
+                # Convertir a string
+                code = str(code).strip()
+                name = str(name).strip()
+                account_type = str(account_type).strip()
+                description = str(description).strip() if description else ''
+
+                # Validar tipos de cuenta
+                valid_types = ['Activo', 'Pasivo', 'Capital', 'Ingreso', 'Gasto']
+                if account_type not in valid_types:
+                    errors.append(f'Fila {row_num}: Tipo "{account_type}" no válido. Debe ser: {", ".join(valid_types)}')
+                    row_num += 1
+                    continue
+
+                # Verificar si ya existe
+                existing = ChartOfAccounts.query.filter_by(code=code).first()
+                if existing:
+                    errors.append(f'Fila {row_num}: El código "{code}" ya existe')
+                    row_num += 1
+                    continue
+
+                # Crear cuenta
+                account = ChartOfAccounts(
+                    code=code,
+                    name=name,
+                    account_type=account_type,
+                    description=description
+                )
+                db.session.add(account)
+                imported_count += 1
+
+            except Exception as e:
+                errors.append(f'Fila {row_num}: Error procesando fila - {str(e)}')
+
+            row_num += 1
+
+        # Guardar cambios
+        db.session.commit()
+
+        # Limpiar archivo temporal
+        os.unlink(temp_path)
+
+        return jsonify({
+            'success': True,
+            'message': f'{imported_count} cuentas importadas exitosamente',
+            'imported_count': imported_count,
+            'errors': errors if errors else None
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        return jsonify({
+            'success': False,
+            'message': f'Error al procesar archivo: {str(e)}'
+        }), 400
 
 
 @accounting_bp.route('/journal', methods=['GET'])
