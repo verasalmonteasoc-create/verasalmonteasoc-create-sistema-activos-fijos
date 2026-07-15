@@ -1317,4 +1317,81 @@ function deleteAssetFromDetails() {
     }
 }
 
+// IMPORTAR ACTIVOS DESDE EXCEL
+function openImportAssetsModal() {
+    document.getElementById('importAssetsModal').classList.add('active');
+    document.getElementById('importAssetsForm').reset();
+    document.getElementById('importAssetsProgress').style.display = 'none';
+    document.getElementById('importAssetsResultsList').style.display = 'none';
+}
+
+function closeImportAssetsModal() {
+    document.getElementById('importAssetsModal').classList.remove('active');
+}
+
+async function submitImportAssets(e) {
+    e.preventDefault();
+    const file = document.getElementById('importAssetsFile').files[0];
+    if (!file) {
+        alert('Selecciona un archivo');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    document.getElementById('importAssetsProgress').style.display = 'block';
+
+    try {
+        const res = await fetch('/api/assets/import', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        document.getElementById('importAssetsProgress').style.display = 'none';
+        document.getElementById('importAssetsResultsList').style.display = 'block';
+
+        const resultsList = document.getElementById('importAssetsResultsList');
+        resultsList.innerHTML = '';
+
+        if (data.success) {
+            const msg = document.createElement('li');
+            msg.style.color = '#28a745';
+            msg.textContent = `✓ ${data.imported_count} activos importados`;
+            resultsList.appendChild(msg);
+
+            if (data.errors && data.errors.length > 0) {
+                const errTitle = document.createElement('li');
+                errTitle.style.color = '#dc3545';
+                errTitle.style.fontWeight = 'bold';
+                errTitle.textContent = `Errores encontrados (${data.errors.length}):`;
+                resultsList.appendChild(errTitle);
+
+                data.errors.forEach(err => {
+                    const li = document.createElement('li');
+                    li.style.color = '#dc3545';
+                    li.textContent = err;
+                    li.style.marginLeft = '20px';
+                    resultsList.appendChild(li);
+                });
+            }
+
+            setTimeout(() => {
+                closeImportAssetsModal();
+                loadAssets();
+                loadDashboard();
+            }, 2000);
+        } else {
+            const errLi = document.createElement('li');
+            errLi.style.color = '#dc3545';
+            errLi.textContent = `✗ Error: ${data.message}`;
+            resultsList.appendChild(errLi);
+        }
+    } catch (error) {
+        document.getElementById('importAssetsProgress').style.display = 'none';
+        alert('Error: ' + error.message);
+    }
+}
+
 console.log('✓ App script loaded');

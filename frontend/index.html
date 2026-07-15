@@ -283,6 +283,7 @@
                 <div id="assets-page" class="page">
                     <h2>Gestión de Activos</h2>
                     <button class="btn btn-success" onclick="openAssetModal()">Nuevo Activo</button>
+                    <button class="btn" onclick="openImportAssetsModal()">Importar Excel</button>
                     <table>
                         <thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Departamento</th><th>Costo</th><th>Acciones</th></tr></thead>
                         <tbody id="assetsTable"><tr><td colspan="6">Cargando...</td></tr></tbody>
@@ -698,6 +699,30 @@
                     <textarea id="locationDesc"></textarea>
                 </div>
                 <button type="submit" class="btn btn-success">Guardar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="importAssetsModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close-modal" onclick="closeImportAssetsModal()">&times;</span>
+            <h2>Importar Activos desde Excel</h2>
+            <form id="importAssetsForm" enctype="multipart/form-data" onsubmit="submitImportAssets(event)">
+                <div class="form-group">
+                    <label>Archivo Excel (.xlsx o .xls) *</label>
+                    <small style="color: #999; display: block; margin-bottom: 10px;">
+                        Formato esperado: Columnas A=Descripción, B=Categoría, C=Costo, D=Fecha, E=Vida Útil, F=Suplidor, G=Factura, H=NCF
+                    </small>
+                    <input type="file" id="importAssetsFile" accept=".xlsx,.xls" required>
+                </div>
+                <div id="importAssetsProgress" style="display: none;">
+                    <p>Importando...</p>
+                    <div style="background: #f0f0f0; padding: 10px; border-radius: 5px;">
+                        <div id="importAssetsProgressBar" style="background: #003D7A; height: 20px; width: 0%; border-radius: 3px;"></div>
+                    </div>
+                </div>
+                <ul id="importAssetsResultsList" style="display: none; margin: 15px 0;"></ul>
+                <button type="submit" class="btn btn-success">Importar</button>
             </form>
         </div>
     </div>

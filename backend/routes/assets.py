@@ -7,6 +7,9 @@ from datetime import datetime
 from decimal import Decimal
 from backend.models import db, Asset, AssetCategory, DepreciationRecord, AuditLog, Department
 import os
+import openpyxl
+from werkzeug.utils import secure_filename
+import tempfile
 
 assets_bp = Blueprint('assets', __name__, url_prefix='/api/assets')
 
@@ -511,3 +514,92 @@ def view_invoice(asset_id):
             'success': False,
             'message': f'Error viewing file: {str(e)}'
         }), 500
+
+
+@assets_bp.route('/import', methods=['POST'])
+def import_assets():
+    """Importar activos desde Excel"""
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No se proporcionó archivo'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'Archivo vacío'}), 400
+
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'message': 'El archivo debe ser Excel (.xlsx o .xls)'}), 400
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+            file.save(tmp.name)
+            temp_path = tmp.name
+
+        wb = openpyxl.load_workbook(temp_path)
+        ws = wb.active
+
+        imported_count = 0
+        errors = []
+        row_num = 2
+
+        # Columnas esperadas: A=Descripción, B=Categoría, C=Costo, D=Fecha, E=Vida Útil, F=Suplidor, G=Factura, H=NCF
+        for row in ws.iter_rows(min_row=2, values_only=False):
+            try:
+                desc = row[0].value if row[0] else None
+                cat_name = row[1].value if row[1] else None
+                cost = row[2].value if row[2] else None
+                acq_date = row[3].value if row[3] else None
+                useful_life = row[4].value if row[4] else None
+                supplier = row[5].value if row[5] else None
+                invoice = row[6].value if row[6] else None
+                ncf = row[7].value if row[7] else None
+
+                # Validar campos obligatorios
+                if not desc or not cat_name or not cost:
+                    errors.append(f'Fila {row_num}: Faltan campos (Descripción, Categoría, Costo)')
+                    row_num += 1
+                    continue
+
+                # Buscar categoría
+                category = AssetCategory.query.filter_by(name=str(cat_name).strip()).first()
+                if not category:
+                    errors.append(f'Fila {row_num}: Categoría "{cat_name}" no encontrada')
+                    row_num += 1
+                    continue
+
+                # Crear activo
+                asset = Asset(
+                    description=str(desc),
+                    category_id=category.id,
+                    acquisition_cost=Decimal(str(cost)),
+                    acquisition_date=acq_date if isinstance(acq_date, datetime) else datetime.now(),
+                    useful_life_years=int(useful_life) if useful_life else 5,
+                    supplier_name=str(supplier) if supplier else None,
+                    fiscal_receipt_number=str(ncf) if ncf else None,
+                    status='active'
+                )
+                db.session.add(asset)
+                imported_count += 1
+
+            except Exception as e:
+                errors.append(f'Fila {row_num}: {str(e)}')
+
+            row_num += 1
+
+        db.session.commit()
+        os.unlink(temp_path)
+
+        return jsonify({
+            'success': True,
+            'message': f'{imported_count} activos importados',
+            'imported_count': imported_count,
+            'errors': errors if errors else None
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        if 'temp_path' in locals() and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }), 400
