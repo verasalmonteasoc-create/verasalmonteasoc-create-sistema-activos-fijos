@@ -64,6 +64,43 @@ class AssetCategory(db.Model):
         return f'<AssetCategory {self.name}>'
 
 
+class Department(db.Model):
+    """Departamentos o Centros de Costo"""
+    __tablename__ = 'departments'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relaciones
+    assets = db.relationship('Asset', backref='department_obj', lazy='dynamic', foreign_keys='Asset.department_id')
+
+    def __repr__(self):
+        return f'<Department {self.name}>'
+
+
+class Location(db.Model):
+    """Localidades o Sucursales"""
+    __tablename__ = 'locations'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    address = db.Column(db.String(255))
+    city = db.Column(db.String(100))
+    phone = db.Column(db.String(50))
+    description = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relaciones
+    assets = db.relationship('Asset', backref='location_obj', lazy='dynamic', foreign_keys='Asset.location_id')
+
+    def __repr__(self):
+        return f'<Location {self.name}>'
+
+
 class Asset(db.Model):
     """Modelo de Activo Fijo"""
     __tablename__ = 'assets'
@@ -81,13 +118,36 @@ class Asset(db.Model):
 
     # Información operativa
     location = db.Column(db.String(120))
-    department = db.Column(db.String(120))
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True, index=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True, index=True)
     responsible = db.Column(db.String(120))
     serial_number = db.Column(db.String(100), nullable=True)
     status = db.Column(db.String(20), default='active', index=True)
 
     supplier_name = db.Column(db.String(255))
     fiscal_receipt_number = db.Column(db.String(50))
+    acquisition_year = db.Column(db.Integer)
+    invoice_filename = db.Column(db.String(255))
+
+    # Información adicional del activo
+    warranty = db.Column(db.String(100))  # Garantía (ej: "24 meses", "Vitalicia")
+    asset_user = db.Column(db.String(120))  # Usuario/Responsable del activo
+    color = db.Column(db.String(50))
+    year_manufactured = db.Column(db.Integer)  # Año de manufactura
+    brand = db.Column(db.String(120))  # Marca
+    model = db.Column(db.String(120))  # Modelo
+
+    # Campos específicos para vehículos
+    chassis = db.Column(db.String(100))  # VIN o chassis number
+    plate_number = db.Column(db.String(50))  # Número de placa
+
+    # Campos específicos para equipos
+    equipment_serial = db.Column(db.String(100))  # Serial del equipo
+    equipment_supplier = db.Column(db.String(255))  # Suplidor del equipo
+
+    # Campos de estado y ubicación
+    physical_location = db.Column(db.String(255))  # Ubicación física actual
+    asset_condition = db.Column(db.String(50), default='good')  # Estado: good, fair, poor, retired
 
     # Auditoría
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)

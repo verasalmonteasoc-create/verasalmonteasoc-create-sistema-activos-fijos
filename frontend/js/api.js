@@ -133,6 +133,18 @@ const API = {
         getSummary(assetId) {
             return API.get(`/assets/${assetId}/summary`);
         },
+
+        downloadInvoice(assetId) {
+            window.location.href = `/api/assets/${assetId}/invoice`;
+        },
+
+        viewInvoice(assetId) {
+            return fetch(`/api/assets/${assetId}/invoice/view`).then(r => r.blob()).then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                window.open(url, '_blank');
+                window.URL.revokeObjectURL(url);
+            });
+        },
     },
 
     // ========== CATEGORÍAS ==========

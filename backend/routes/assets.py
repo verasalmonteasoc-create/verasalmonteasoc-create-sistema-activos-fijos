@@ -1,17 +1,26 @@
 """
 Rutas de Gestión de Activos
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file, send_from_directory
 from flask_login import current_user, login_required
 from datetime import datetime
 from decimal import Decimal
-from backend.models import db, Asset, AssetCategory, DepreciationRecord, AuditLog
+from backend.models import db, Asset, AssetCategory, DepreciationRecord, AuditLog, Department
+import os
 
 assets_bp = Blueprint('assets', __name__, url_prefix='/api/assets')
 
 
 def serialize_asset(asset):
     """Convertir Asset a diccionario JSON"""
+    department_name = None
+    if asset.department_obj:
+        department_name = asset.department_obj.name
+
+    location_name = None
+    if asset.location_obj:
+        location_name = asset.location_obj.name
+
     return {
         'id': asset.id,
         'code': asset.code,
@@ -26,12 +35,27 @@ def serialize_asset(asset):
         'residual_value_percent': float(asset.residual_value_percent),
         'useful_life_years': asset.useful_life_years,
         'location': asset.location,
-        'department': asset.department,
+        'location_name': location_name,
+        'department': department_name,
         'responsible': asset.responsible,
         'serial_number': asset.serial_number,
         'supplier_name': asset.supplier_name,
         'fiscal_receipt_number': asset.fiscal_receipt_number,
+        'acquisition_year': asset.acquisition_year,
+        'invoice_filename': asset.invoice_filename,
         'status': asset.status,
+        'warranty': asset.warranty,
+        'asset_user': asset.asset_user,
+        'color': asset.color,
+        'year_manufactured': asset.year_manufactured,
+        'brand': asset.brand,
+        'model': asset.model,
+        'chassis': asset.chassis,
+        'plate_number': asset.plate_number,
+        'equipment_serial': asset.equipment_serial,
+        'equipment_supplier': asset.equipment_supplier,
+        'physical_location': asset.physical_location,
+        'asset_condition': asset.asset_condition,
         'accumulated_depreciation': asset.get_accumulated_depreciation(),
         'net_book_value': asset.get_net_book_value(),
         'is_fully_depreciated': asset.is_fully_depreciated(),
@@ -90,7 +114,33 @@ def get_asset(asset_id):
 @assets_bp.route('', methods=['POST'])
 def create_asset():
     """Crear nuevo activo"""
-    data = request.get_json()
+    # Manejo de FormData (con archivos) o JSON
+    if request.is_json:
+        data = request.get_json()
+    else:
+        data = request.form.to_dict()
+
+    invoice_filename = None
+
+    # Manejar archivo de factura si existe
+    if 'invoice_file' in request.files:
+        file = request.files['invoice_file']
+        if file and file.filename:
+            try:
+                import os
+                from werkzeug.utils import secure_filename
+
+                upload_folder = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', 'invoices')
+                os.makedirs(upload_folder, exist_ok=True)
+
+                # Guardar con nombre seguro
+                timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+                filename = secure_filename(f"{timestamp}_{file.filename}")
+                filepath = os.path.join(upload_folder, filename)
+                file.save(filepath)
+                invoice_filename = filename
+            except Exception as e:
+                logger.error(f"Error saving invoice: {e}")
 
     # Validación
     required_fields = ['description', 'category_id', 'acquisition_date', 'acquisition_cost', 'useful_life_years']
@@ -99,6 +149,21 @@ def create_asset():
 
     # Verificar categoría
     category = AssetCategory.query.get_or_404(data['category_id'])
+
+    # Obtener departamento si existe
+    department_id = None
+    if data.get('department'):
+        dept = Department.query.filter_by(name=data.get('department')).first()
+        if dept:
+            department_id = dept.id
+
+    # Obtener localidad si existe
+    location_id = None
+    if data.get('location_name'):
+        from backend.models import Location
+        loc = Location.query.filter_by(name=data.get('location_name')).first()
+        if loc:
+            location_id = loc.id
 
     # Crear activo
     asset = Asset(
@@ -109,12 +174,27 @@ def create_asset():
         residual_value_percent=Decimal(str(data.get('residual_value_percent', 10))),
         useful_life_years=data['useful_life_years'],
         location=data.get('location', ''),
-        department=data.get('department', ''),
+        location_id=location_id,
+        department_id=department_id,
         responsible=data.get('responsible', ''),
         serial_number=data.get('serial_number'),
         supplier_name=data.get('supplier_name', ''),
         fiscal_receipt_number=data.get('fiscal_receipt_number', ''),
+        acquisition_year=int(data.get('acquisition_year', datetime.now().year)),
+        invoice_filename=invoice_filename,
         status=data.get('status', 'active'),
+        warranty=data.get('warranty', ''),
+        asset_user=data.get('asset_user', ''),
+        color=data.get('color', ''),
+        year_manufactured=int(data.get('year_manufactured', 0)) if data.get('year_manufactured') else None,
+        brand=data.get('brand', ''),
+        model=data.get('model', ''),
+        chassis=data.get('chassis', ''),
+        plate_number=data.get('plate_number', ''),
+        equipment_serial=data.get('equipment_serial', ''),
+        equipment_supplier=data.get('equipment_supplier', ''),
+        physical_location=data.get('physical_location', ''),
+        asset_condition=data.get('asset_condition', 'good'),
         created_by=1,
         notes=data.get('notes', '')
     )
@@ -151,11 +231,51 @@ def update_asset(asset_id):
     old_values = {}
 
     # Campos actualizables
-    updatable_fields = ['description', 'location', 'department', 'responsible', 'status', 'notes']
+    updatable_fields = [
+        'description', 'location', 'responsible', 'status', 'notes', 'category_id',
+        'acquisition_cost', 'useful_life_years', 'warranty', 'asset_user', 'color',
+        'year_manufactured', 'brand', 'model', 'chassis', 'plate_number',
+        'equipment_serial', 'equipment_supplier', 'physical_location', 'asset_condition'
+    ]
     for field in updatable_fields:
         if field in data:
             old_values[field] = getattr(asset, field)
-            setattr(asset, field, data[field])
+            if field == 'category_id':
+                # Validar que la categoría exista
+                category = AssetCategory.query.get_or_404(data[field])
+                setattr(asset, field, data[field])
+            elif field == 'acquisition_cost':
+                setattr(asset, field, Decimal(str(data[field])))
+            elif field == 'year_manufactured':
+                value = int(data[field]) if data[field] else None
+                setattr(asset, field, value)
+            else:
+                setattr(asset, field, data[field])
+
+    # Manejar departamento especialmente
+    if 'department' in data:
+        old_values['department'] = asset.department_obj.name if asset.department_obj else None
+        if data.get('department'):
+            dept = Department.query.filter_by(name=data.get('department')).first()
+            if dept:
+                asset.department_id = dept.id
+            else:
+                asset.department_id = None
+        else:
+            asset.department_id = None
+
+    # Manejar localidad especialmente
+    if 'location_name' in data:
+        old_values['location_name'] = asset.location_obj.name if asset.location_obj else None
+        if data.get('location_name'):
+            from backend.models import Location
+            loc = Location.query.filter_by(name=data.get('location_name')).first()
+            if loc:
+                asset.location_id = loc.id
+            else:
+                asset.location_id = None
+        else:
+            asset.location_id = None
 
     asset.updated_at = datetime.utcnow()
     db.session.commit()
@@ -167,7 +287,7 @@ def update_asset(asset_id):
         entity_id=asset.id,
         action='update',
         old_value=old_values,
-        new_value={k: data[k] for k in updatable_fields if k in data},
+        new_value={k: data[k] for k in (updatable_fields + ['department', 'location_name']) if k in data},
         description=f'Activo actualizado: {asset.code}'
     )
     db.session.add(audit)
@@ -292,3 +412,68 @@ def get_asset_summary(asset_id):
             'status': asset.status
         }
     }), 200
+
+
+@assets_bp.route('/<int:asset_id>/invoice', methods=['GET'])
+def download_invoice(asset_id):
+    """Descargar factura del activo"""
+    asset = Asset.query.get_or_404(asset_id)
+
+    if not asset.invoice_filename:
+        return jsonify({
+            'success': False,
+            'message': 'No hay factura adjunta para este activo'
+        }), 404
+
+    try:
+        upload_folder = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', 'invoices')
+        file_path = os.path.join(upload_folder, asset.invoice_filename)
+
+        if not os.path.exists(file_path):
+            return jsonify({
+                'success': False,
+                'message': 'Archivo de factura no encontrado'
+            }), 404
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=f"factura_{asset.code}_{asset.invoice_filename.split('_', 1)[1] if '_' in asset.invoice_filename else asset.invoice_filename}"
+        )
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error descargando archivo: {str(e)}'
+        }), 500
+
+
+@assets_bp.route('/<int:asset_id>/invoice/view', methods=['GET'])
+def view_invoice(asset_id):
+    """Ver factura del activo (no descargar)"""
+    asset = Asset.query.get_or_404(asset_id)
+
+    if not asset.invoice_filename:
+        return jsonify({
+            'success': False,
+            'message': 'No hay factura adjunta para este activo'
+        }), 404
+
+    try:
+        upload_folder = os.path.join(os.path.dirname(__file__), '..', '..', 'uploads', 'invoices')
+        file_path = os.path.join(upload_folder, asset.invoice_filename)
+
+        if not os.path.exists(file_path):
+            return jsonify({
+                'success': False,
+                'message': 'Archivo de factura no encontrado'
+            }), 404
+
+        return send_file(
+            file_path,
+            as_attachment=False
+        )
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error viewing file: {str(e)}'
+        }), 500

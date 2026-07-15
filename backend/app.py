@@ -104,12 +104,16 @@ def register_blueprints(app):
     from backend.routes.auth import auth_bp
     from backend.routes.assets import assets_bp
     from backend.routes.categories import categories_bp
+    from backend.routes.departments import departments_bp
+    from backend.routes.locations import locations_bp
     from backend.routes.reports import reports_bp
     from backend.routes.accounting import accounting_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
     app.register_blueprint(categories_bp)
+    app.register_blueprint(departments_bp)
+    app.register_blueprint(locations_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(accounting_bp)
 

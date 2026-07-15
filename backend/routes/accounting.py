@@ -4,42 +4,45 @@ Rutas de Configuración Contable
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 from decimal import Decimal
-from backend.models import db, ChartOfAccounts, JournalEntry, Asset, AssetCategory, AuditLog
+from backend.models import db, ChartOfAccounts, JournalEntry, Asset, AssetCategory
 
 accounting_bp = Blueprint('accounting', __name__, url_prefix='/api/accounting')
 
 
 @accounting_bp.route('/accounts', methods=['GET'])
 def get_accounts():
-    """Listar todas las cuentas"""
-    accounts = ChartOfAccounts.query.all()
+    """Listar todas las cuentas contables"""
+    accounts = ChartOfAccounts.query.order_by(ChartOfAccounts.code).all()
     return jsonify({
         'success': True,
         'accounts': [{
-            'id': a.id,
-            'code': a.code,
-            'name': a.name,
-            'account_type': a.account_type,
-            'description': a.description
-        } for a in accounts]
+            'id': acc.id,
+            'code': acc.code,
+            'name': acc.name,
+            'account_type': acc.account_type,
+            'description': acc.description
+        } for acc in accounts]
     }), 200
 
 
 @accounting_bp.route('/accounts', methods=['POST'])
 def create_account():
-    """Crear nueva cuenta"""
+    """Crear nueva cuenta contable"""
     data = request.get_json()
 
-    if not data or not data.get('code') or not data.get('name'):
+    required_fields = ['code', 'name', 'account_type']
+    if not all(field in data for field in required_fields):
         return jsonify({'success': False, 'message': 'Campos requeridos faltantes'}), 400
 
-    if ChartOfAccounts.query.filter_by(code=data['code']).first():
-        return jsonify({'success': False, 'message': 'Código de cuenta ya existe'}), 409
+    # Verificar código único
+    existing = ChartOfAccounts.query.filter_by(code=data['code']).first()
+    if existing:
+        return jsonify({'success': False, 'message': 'El código de cuenta ya existe'}), 400
 
     account = ChartOfAccounts(
         code=data['code'],
         name=data['name'],
-        account_type=data.get('account_type', 'Activo'),
+        account_type=data['account_type'],
         description=data.get('description', '')
     )
 
@@ -48,21 +51,28 @@ def create_account():
 
     return jsonify({
         'success': True,
-        'message': 'Cuenta creada',
+        'message': 'Cuenta creada exitosamente',
         'account': {
             'id': account.id,
             'code': account.code,
             'name': account.name,
-            'account_type': account.account_type
+            'account_type': account.account_type,
+            'description': account.description
         }
     }), 201
 
 
 @accounting_bp.route('/accounts/<int:account_id>', methods=['PUT'])
 def update_account(account_id):
-    """Actualizar cuenta"""
+    """Actualizar cuenta contable"""
     account = ChartOfAccounts.query.get_or_404(account_id)
     data = request.get_json()
+
+    if 'code' in data and data['code'] != account.code:
+        existing = ChartOfAccounts.query.filter_by(code=data['code']).first()
+        if existing:
+            return jsonify({'success': False, 'message': 'El código de cuenta ya existe'}), 400
+        account.code = data['code']
 
     if 'name' in data:
         account.name = data['name']
@@ -71,7 +81,6 @@ def update_account(account_id):
     if 'description' in data:
         account.description = data['description']
 
-    account.updated_at = datetime.utcnow()
     db.session.commit()
 
     return jsonify({
@@ -81,27 +90,36 @@ def update_account(account_id):
             'id': account.id,
             'code': account.code,
             'name': account.name,
-            'account_type': account.account_type
+            'account_type': account.account_type,
+            'description': account.description
         }
     }), 200
 
 
 @accounting_bp.route('/accounts/<int:account_id>', methods=['DELETE'])
 def delete_account(account_id):
-    """Eliminar cuenta"""
+    """Eliminar cuenta contable"""
     account = ChartOfAccounts.query.get_or_404(account_id)
 
     # Verificar si está en uso
-    if JournalEntry.query.filter((JournalEntry.debit_account_id == account_id) | (JournalEntry.credit_account_id == account_id)).first():
+    in_use = JournalEntry.query.filter(
+        (JournalEntry.debit_account_id == account_id) |
+        (JournalEntry.credit_account_id == account_id)
+    ).first()
+
+    if in_use:
         return jsonify({
             'success': False,
-            'message': 'No se puede eliminar. Cuenta está en uso en asientos'
-        }), 409
+            'message': 'No se puede eliminar: la cuenta está en uso en asientos contables'
+        }), 400
 
     db.session.delete(account)
     db.session.commit()
 
-    return jsonify({'success': True, 'message': 'Cuenta eliminada'}), 200
+    return jsonify({
+        'success': True,
+        'message': 'Cuenta eliminada'
+    }), 200
 
 
 @accounting_bp.route('/journal', methods=['GET'])
@@ -111,6 +129,7 @@ def get_journal_entries():
     month = request.args.get('month', type=int)
 
     query = JournalEntry.query
+
     if year:
         query = query.filter_by(year=year)
     if month:
@@ -124,8 +143,14 @@ def get_journal_entries():
             'id': e.id,
             'entry_date': e.entry_date.isoformat(),
             'description': e.description,
-            'debit_account': e.debit_account.name if e.debit_account else '',
-            'credit_account': e.credit_account.name if e.credit_account else '',
+            'debit_account': {
+                'code': e.debit_account.code if e.debit_account else '',
+                'name': e.debit_account.name if e.debit_account else ''
+            } if e.debit_account else None,
+            'credit_account': {
+                'code': e.credit_account.code if e.credit_account else '',
+                'name': e.credit_account.name if e.credit_account else ''
+            } if e.credit_account else None,
             'amount': float(e.amount),
             'year': e.year,
             'month': e.month
@@ -135,65 +160,54 @@ def get_journal_entries():
 
 @accounting_bp.route('/journal/generate', methods=['POST'])
 def generate_journal_entries():
-    """Generar asientos contables del mes"""
+    """Generar asientos contables automáticos para depreciación"""
     data = request.get_json()
-    year = data.get('year')
-    month = data.get('month')
+    year = data.get('year', datetime.now().year)
+    month = data.get('month', datetime.now().month)
 
-    if not year or not month:
-        return jsonify({'success': False, 'message': 'Año y mes requeridos'}), 400
+    # Obtener todos los activos activos
+    assets = Asset.query.filter_by(status='active').all()
 
-    # Verificar si ya existen asientos para este mes
-    existing = JournalEntry.query.filter_by(year=year, month=month).first()
-    if existing:
-        return jsonify({'success': False, 'message': 'Los asientos para este mes ya fueron generados'}), 409
+    created_entries = []
 
-    # Obtener depreciaciones del mes
-    from backend.models import DepreciationRecord
-    depreciations = DepreciationRecord.query.filter_by(year=year, month=month).all()
+    for asset in assets:
+        if asset.is_fully_depreciated():
+            continue
 
-    if not depreciations:
-        return jsonify({'success': False, 'message': 'No hay depreciaciones registradas para este período'}), 400
+        # Calcular depreciación del mes
+        monthly_depreciation = Decimal(str(asset.get_monthly_depreciation()))
 
-    total_depreciation = Decimal('0')
-    entries_created = 0
+        # Obtener cuentas de la categoría
+        category = asset.category
+        if not category.depreciation_expense_account or not category.accumulated_depreciation_account:
+            continue
 
-    try:
-        for dep in depreciations:
-            asset = Asset.query.get(dep.asset_id)
-            if not asset:
-                continue
+        # Buscar cuentas
+        expense_account = ChartOfAccounts.query.filter_by(code=category.depreciation_expense_account).first()
+        accumulated_account = ChartOfAccounts.query.filter_by(code=category.accumulated_depreciation_account).first()
 
-            category = asset.category
-            total_depreciation += dep.depreciation_amount
+        if not expense_account or not accumulated_account:
+            continue
 
-            # Buscar cuentas contables de la categoría
-            debit_account = ChartOfAccounts.query.filter_by(code=category.depreciation_expense_account).first() if category.depreciation_expense_account else None
-            credit_account = ChartOfAccounts.query.filter_by(code=category.accumulated_depreciation_account).first() if category.accumulated_depreciation_account else None
+        # Crear asiento
+        entry = JournalEntry(
+            entry_date=datetime(year, month, 1).date(),
+            description=f'Depreciación: {asset.code} - {asset.description}',
+            debit_account_id=expense_account.id,
+            credit_account_id=accumulated_account.id,
+            amount=monthly_depreciation,
+            asset_id=asset.id,
+            year=year,
+            month=month
+        )
 
-            if debit_account and credit_account:
-                entry = JournalEntry(
-                    entry_date=datetime.utcnow().date(),
-                    description=f'Depreciación {asset.code} - {asset.description}',
-                    debit_account_id=debit_account.id,
-                    credit_account_id=credit_account.id,
-                    amount=dep.depreciation_amount,
-                    asset_id=dep.asset_id,
-                    year=year,
-                    month=month
-                )
-                db.session.add(entry)
-                entries_created += 1
+        db.session.add(entry)
+        created_entries.append(entry)
 
-        db.session.commit()
+    db.session.commit()
 
-        return jsonify({
-            'success': True,
-            'message': f'{entries_created} asientos generados',
-            'total_depreciation': float(total_depreciation),
-            'entries_count': entries_created
-        }), 201
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+    return jsonify({
+        'success': True,
+        'message': f'{len(created_entries)} asientos generados',
+        'entries_created': len(created_entries)
+    }), 201
