@@ -1,0 +1,45 @@
+services:
+  - type: postgresql
+    name: asset-mgmt-postgres
+    plan: free
+    ipAllowList: []
+    postgresSQLVersion: 13
+
+  - type: web
+    name: asset-mgmt-backend
+    plan: free
+    runtime: python-3.11
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT backend.app:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DB_HOST
+        fromDatabase:
+          name: asset-mgmt-postgres
+          property: host
+      - key: DB_PORT
+        value: 5432
+      - key: DB_NAME
+        value: asset_management
+      - key: DB_USER
+        fromDatabase:
+          name: asset-mgmt-postgres
+          property: username
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: asset-mgmt-postgres
+          property: password
+    routes:
+      - path: /
+        matchType: prefix
+
+  - type: static
+    name: asset-mgmt-frontend
+    plan: free
+    staticPublishPath: frontend
+    routes:
+      - path: /
+        matchType: prefix
