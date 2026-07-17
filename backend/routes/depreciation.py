@@ -242,6 +242,170 @@ def _get_month_name(month):
     return months.get(month, '')
 
 
+@depreciation_bp.route('/period-total', methods=['GET'])
+def get_period_total():
+    """Obtener total de depreciación de un período"""
+    try:
+        year_from = request.args.get('from', type=str)
+        year_to = request.args.get('to', type=str)
+
+        if not year_from or not year_to:
+            return jsonify({'success': False, 'message': 'Parámetros requeridos'}), 400
+
+        year_from_int, month_from_int = map(int, year_from.split('-'))
+        year_to_int, month_to_int = map(int, year_to.split('-'))
+
+        # Obtener registros del período
+        records = db.session.query(DepreciationRecord).filter(
+            db.or_(
+                db.and_(
+                    DepreciationRecord.year == year_from_int,
+                    DepreciationRecord.month >= month_from_int
+                ),
+                db.and_(
+                    DepreciationRecord.year == year_to_int,
+                    DepreciationRecord.month <= month_to_int
+                ),
+                db.and_(
+                    DepreciationRecord.year > year_from_int,
+                    DepreciationRecord.year < year_to_int
+                )
+            )
+        ).all()
+
+        total = sum(Decimal(str(r.depreciation_amount)) for r in records)
+
+        return jsonify({
+            'success': True,
+            'total_depreciation': float(total)
+        }), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@depreciation_bp.route('/period-report', methods=['GET'])
+def get_period_report():
+    """Generar reporte Excel consolidado de un período"""
+    try:
+        year_from = request.args.get('year_from', type=int)
+        month_from = request.args.get('month_from', type=int)
+        year_to = request.args.get('year_to', type=int)
+        month_to = request.args.get('month_to', type=int)
+
+        if not all([year_from, month_from, year_to, month_to]):
+            return jsonify({'success': False, 'message': 'Parámetros requeridos'}), 400
+
+        # Obtener registros del período
+        records = db.session.query(DepreciationRecord).filter(
+            db.or_(
+                db.and_(
+                    DepreciationRecord.year == year_from,
+                    DepreciationRecord.month >= month_from
+                ),
+                db.and_(
+                    DepreciationRecord.year == year_to,
+                    DepreciationRecord.month <= month_to
+                ),
+                db.and_(
+                    DepreciationRecord.year > year_from,
+                    DepreciationRecord.year < year_to
+                )
+            )
+        ).order_by(DepreciationRecord.year, DepreciationRecord.month).all()
+
+        if not records:
+            return jsonify({'success': False, 'message': 'No hay registros para este período'}), 404
+
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from datetime import datetime
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Período"
+
+        # Estilos
+        header_fill = PatternFill(start_color="003D7A", end_color="003D7A", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        title_font = Font(bold=True, size=14)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # Título
+        ws['A1'] = "REPORTE DE DEPRECIACIÓN - PERÍODO CONSOLIDADO"
+        ws['A1'].font = title_font
+        ws.merge_cells('A1:H1')
+
+        # Información del período
+        start_month = _get_month_name(month_from)
+        end_month = _get_month_name(month_to)
+        ws['A2'] = f"Período: {start_month} {year_from} a {end_month} {year_to}"
+        ws['A3'] = f"Fecha de Reporte: {datetime.now().strftime('%d/%m/%Y')}"
+
+        # Tabla de depreciación
+        row = 5
+        headers = ["Año-Mes", "Código Activo", "Descripción", "Categoría", "Deprec. Mensual", "Acumulada", "Valor Neto"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+
+        # Datos
+        total_depreciation = Decimal('0')
+        row = 6
+        current_month = None
+
+        for rec in records:
+            asset = Asset.query.get(rec.asset_id)
+            if asset:
+                month_display = f"{rec.year}-{String(rec.month).zfill(2)}"
+                ws.cell(row=row, column=1).value = month_display
+                ws.cell(row=row, column=2).value = asset.code
+                ws.cell(row=row, column=3).value = asset.description
+                ws.cell(row=row, column=4).value = asset.category.name if asset.category else ""
+                ws.cell(row=row, column=5).value = float(rec.depreciation_amount)
+                ws.cell(row=row, column=6).value = float(rec.accumulated_depreciation)
+                ws.cell(row=row, column=7).value = float(rec.net_book_value)
+
+                total_depreciation += rec.depreciation_amount
+                row += 1
+
+        # Totales
+        row += 1
+        ws.cell(row=row, column=1).value = "TOTAL DEL PERÍODO"
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=5).value = float(total_depreciation)
+        ws.cell(row=row, column=5).font = Font(bold=True)
+
+        # Ajustar anchos
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 20
+        ws.column_dimensions['C'].width = 30
+        for col in ['D', 'E', 'F', 'G']:
+            ws.column_dimensions[col].width = 18
+
+        # Guardar en memoria
+        import io
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output.getvalue(), 200, {
+            'Content-Disposition': f'attachment; filename="Depreciacion_{year_from}_{month_from:02d}_a_{year_to}_{month_to:02d}.xlsx"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @depreciation_bp.route('/report', methods=['GET'])
 def get_depreciation_report():
     """Generar reporte Excel de depreciación"""

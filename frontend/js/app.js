@@ -1412,15 +1412,36 @@ async function loadPreviousMonths() {
         const data = await response.json();
 
         if (data.success && data.months.length > 0) {
-            const select = document.getElementById('previousMonthSelect');
-            select.innerHTML = '<option value="">Seleccionar mes...</option>';
+            const selectFrom = document.getElementById('monthFromSelect');
+            const selectTo = document.getElementById('monthToSelect');
+
+            selectFrom.innerHTML = '<option value="">Seleccionar mes...</option>';
+            selectTo.innerHTML = '<option value="">Seleccionar mes...</option>';
 
             data.months.forEach(month => {
-                const option = document.createElement('option');
-                option.value = `${month.year}-${String(month.month).padStart(2, '0')}`;
-                option.textContent = month.display;
-                select.appendChild(option);
+                const value = `${month.year}-${String(month.month).padStart(2, '0')}`;
+
+                const optionFrom = document.createElement('option');
+                optionFrom.value = value;
+                optionFrom.textContent = month.display;
+                selectFrom.appendChild(optionFrom);
+
+                const optionTo = document.createElement('option');
+                optionTo.value = value;
+                optionTo.textContent = month.display;
+                selectTo.appendChild(optionTo);
             });
+
+            // Seleccionar el primer mes en "Desde" y el último en "Hasta"
+            if (data.months.length > 0) {
+                selectFrom.value = `${data.months[data.months.length - 1].year}-${String(data.months[data.months.length - 1].month).padStart(2, '0')}`;
+                selectTo.value = `${data.months[0].year}-${String(data.months[0].month).padStart(2, '0')}`;
+                updatePeriodSummary();
+
+                // Agregar event listeners
+                selectFrom.addEventListener('change', updatePeriodSummary);
+                selectTo.addEventListener('change', updatePeriodSummary);
+            }
 
             document.getElementById('previousMonthsSection').style.display = 'block';
         } else {
@@ -1611,17 +1632,77 @@ function downloadDepreciationReport(year, month) {
     document.body.removeChild(link);
 }
 
-function downloadPreviousReport() {
-    const select = document.getElementById('previousMonthSelect');
-    const value = select.value;
+function updatePeriodSummary() {
+    const monthFromSelect = document.getElementById('monthFromSelect');
+    const monthToSelect = document.getElementById('monthToSelect');
+    const valueFrom = monthFromSelect.value;
+    const valueTo = monthToSelect.value;
 
-    if (!value) {
-        alert('Por favor selecciona un mes');
+    if (!valueFrom || !valueTo) {
+        document.getElementById('periodSummary').style.display = 'none';
         return;
     }
 
-    const [year, month] = value.split('-');
-    downloadDepreciationReport(parseInt(year), parseInt(month));
+    const dateFrom = new Date(valueFrom + '-01');
+    const dateTo = new Date(valueTo + '-01');
+
+    if (dateFrom > dateTo) {
+        alert('La fecha "Desde" no puede ser posterior a "Hasta"');
+        return;
+    }
+
+    const textFrom = monthFromSelect.options[monthFromSelect.selectedIndex].text;
+    const textTo = monthToSelect.options[monthToSelect.selectedIndex].text;
+    document.getElementById('periodText').textContent = `${textFrom} a ${textTo}`;
+
+    // Calcular depreciación total del período
+    calculatePeriodDepreciation(valueFrom, valueTo);
+
+    document.getElementById('periodSummary').style.display = 'block';
+}
+
+async function calculatePeriodDepreciation(monthFrom, monthTo) {
+    try {
+        const response = await fetch(`/api/depreciation/period-total?from=${monthFrom}&to=${monthTo}`);
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('periodDepreciation').textContent = `RD$ ${data.total_depreciation.toFixed(2)}`;
+        }
+    } catch (error) {
+        console.error('Error calculando depreciación del período:', error);
+    }
+}
+
+function downloadPeriodReport() {
+    const monthFromSelect = document.getElementById('monthFromSelect');
+    const monthToSelect = document.getElementById('monthToSelect');
+    const valueFrom = monthFromSelect.value;
+    const valueTo = monthToSelect.value;
+
+    if (!valueFrom || !valueTo) {
+        alert('Por favor selecciona ambas fechas');
+        return;
+    }
+
+    const dateFrom = new Date(valueFrom + '-01');
+    const dateTo = new Date(valueTo + '-01');
+
+    if (dateFrom > dateTo) {
+        alert('La fecha "Desde" no puede ser posterior a "Hasta"');
+        return;
+    }
+
+    const [yearFrom, monthFrom] = valueFrom.split('-');
+    const [yearTo, monthTo] = valueTo.split('-');
+
+    const url = `/api/depreciation/period-report?year_from=${yearFrom}&month_from=${monthFrom}&year_to=${yearTo}&month_to=${monthTo}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Depreciacion_${yearFrom}_${monthFrom}_a_${yearTo}_${monthTo}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function cancelDepreciation() {
