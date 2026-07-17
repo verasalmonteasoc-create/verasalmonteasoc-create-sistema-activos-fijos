@@ -96,31 +96,62 @@ def process_monthly_depreciation():
             category = cat_data['category']
             dep_amount = cat_data['depreciation_amount']
 
+            # Obtener cuentas - usar de la categoría o buscar genéricas
+            depreciation_expense_acct = category.depreciation_expense_account
+            accumulated_depreciation_acct = category.accumulated_depreciation_account
+
+            # Si no están vinculadas, buscar cuentas genéricas
+            if not depreciation_expense_acct:
+                acct = ChartOfAccounts.query.filter(
+                    ChartOfAccounts.account_type == 'Gasto'
+                ).first()
+                if acct:
+                    depreciation_expense_acct = acct.code
+
+            if not accumulated_depreciation_acct:
+                acct = ChartOfAccounts.query.filter(
+                    ChartOfAccounts.name.ilike('%Deprec%Acumulada%')
+                ).first()
+                if acct:
+                    accumulated_depreciation_acct = acct.code
+
             # Línea de débito: Gasto de Depreciación
-            if category.depreciation_expense_account:
+            if depreciation_expense_acct:
                 debit_line = JournalEntryLine(
                     journal_entry_id=journal_entry.id,
-                    account_code=category.depreciation_expense_account,
-                    account_name=_get_account_name(category.depreciation_expense_account),
+                    account_code=depreciation_expense_acct,
+                    account_name=_get_account_name(depreciation_expense_acct),
                     debit_amount=dep_amount,
                     credit_amount=Decimal('0'),
                     description=f'Depreciación {category.name}'
                 )
                 db.session.add(debit_line)
                 total_debit += dep_amount
+            else:
+                db.session.rollback()
+                return jsonify({
+                    'success': False,
+                    'message': f'No hay cuenta de gasto de depreciación vinculada a {category.name}'
+                }), 400
 
             # Línea de crédito: Depreciación Acumulada
-            if category.accumulated_depreciation_account:
+            if accumulated_depreciation_acct:
                 credit_line = JournalEntryLine(
                     journal_entry_id=journal_entry.id,
-                    account_code=category.accumulated_depreciation_account,
-                    account_name=_get_account_name(category.accumulated_depreciation_account),
+                    account_code=accumulated_depreciation_acct,
+                    account_name=_get_account_name(accumulated_depreciation_acct),
                     debit_amount=Decimal('0'),
                     credit_amount=dep_amount,
                     description=f'Depreciación Acumulada {category.name}'
                 )
                 db.session.add(credit_line)
                 total_credit += dep_amount
+            else:
+                db.session.rollback()
+                return jsonify({
+                    'success': False,
+                    'message': f'No hay cuenta de depreciación acumulada vinculada a {category.name}'
+                }), 400
 
         # Actualizar totales del asiento
         journal_entry.total_debit = total_debit
