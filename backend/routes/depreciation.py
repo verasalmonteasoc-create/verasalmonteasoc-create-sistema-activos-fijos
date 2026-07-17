@@ -1,7 +1,7 @@
 """
 Rutas de Depreciación Mensual
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from datetime import datetime
 from decimal import Decimal
 from backend.models import db, Asset, DepreciationRecord, JournalEntry, JournalEntryLine, AssetCategory, ChartOfAccounts
@@ -25,17 +25,16 @@ def process_monthly_depreciation():
             return jsonify({'success': False, 'message': 'No hay detalles de depreciación'}), 400
 
         # Verificar si ya existe depreciación para este período
-        existing = DepreciationRecord.query.filter_by(
-            asset_id=details[0]['asset_id'],
-            year=year,
-            month=month
+        existing = DepreciationRecord.query.filter(
+            DepreciationRecord.year == year,
+            DepreciationRecord.month == month
         ).first()
 
         if existing:
             return jsonify({
                 'success': False,
-                'message': f'La depreciación para {month}/{year} ya fue procesada'
-            }), 400
+                'message': f'La depreciación para {month}/{year} ya fue procesada. Intenta con un mes diferente.'
+            }), 409
 
         # Agrupar por categoría para generar asientos
         categories_data = {}
@@ -176,11 +175,26 @@ def process_monthly_depreciation():
             'reference': journal_entry.reference
         }), 200
 
-    except Exception as e:
+    except ValueError as e:
         db.session.rollback()
         return jsonify({
             'success': False,
-            'message': f'Error procesando depreciación: {str(e)}'
+            'message': f'Valores inválidos: {str(e)}'
+        }), 400
+    except KeyError as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'message': f'Falta campo requerido: {str(e)}'
+        }), 400
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_trace = traceback.format_exc()
+        return jsonify({
+            'success': False,
+            'message': f'Error procesando depreciación: {str(e)}',
+            'error': error_trace if current_app.debug else None
         }), 500
 
 
