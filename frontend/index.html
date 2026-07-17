@@ -349,6 +349,21 @@
                     </div>
 
                     <div id="depreciationMessage" style="display: none; margin-top: 20px; padding: 15px; border-radius: 4px;"></div>
+
+                    <div id="previousMonthsSection" style="margin-top: 40px; padding-top: 20px; border-top: 2px solid #ddd;">
+                        <h3>Ver Reportes de Meses Anteriores</h3>
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                            <div class="form-group" style="max-width: 400px;">
+                                <label>Seleccionar Mes Procesado:</label>
+                                <select id="previousMonthSelect" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                                    <option value="">Cargando meses...</option>
+                                </select>
+                                <button class="btn btn-info" onclick="downloadPreviousReport()" style="background: #17a2b8; margin-top: 10px;">
+                                    <i class="fas fa-download"></i> Descargar Reporte
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

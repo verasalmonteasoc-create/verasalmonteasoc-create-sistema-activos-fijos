@@ -1403,6 +1403,32 @@ function initDepreciationMonth() {
     const year = today.getFullYear();
     const month = String(today.getMonth() + 1).padStart(2, '0');
     document.getElementById('depreciationMonth').value = `${year}-${month}`;
+    loadPreviousMonths();
+}
+
+async function loadPreviousMonths() {
+    try {
+        const response = await fetch('/api/depreciation/months');
+        const data = await response.json();
+
+        if (data.success && data.months.length > 0) {
+            const select = document.getElementById('previousMonthSelect');
+            select.innerHTML = '<option value="">Seleccionar mes...</option>';
+
+            data.months.forEach(month => {
+                const option = document.createElement('option');
+                option.value = `${month.year}-${String(month.month).padStart(2, '0')}`;
+                option.textContent = month.display;
+                select.appendChild(option);
+            });
+
+            document.getElementById('previousMonthsSection').style.display = 'block';
+        } else {
+            document.getElementById('previousMonthsSection').style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error cargando meses anteriores:', error);
+    }
 }
 
 async function calculateDepreciation() {
@@ -1583,6 +1609,19 @@ function downloadDepreciationReport(year, month) {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+}
+
+function downloadPreviousReport() {
+    const select = document.getElementById('previousMonthSelect');
+    const value = select.value;
+
+    if (!value) {
+        alert('Por favor selecciona un mes');
+        return;
+    }
+
+    const [year, month] = value.split('-');
+    downloadDepreciationReport(parseInt(year), parseInt(month));
 }
 
 function cancelDepreciation() {

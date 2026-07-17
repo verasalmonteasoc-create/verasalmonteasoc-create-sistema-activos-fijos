@@ -9,6 +9,40 @@ from backend.models import db, Asset, DepreciationRecord, JournalEntry, JournalE
 depreciation_bp = Blueprint('depreciation', __name__, url_prefix='/api/depreciation')
 
 
+@depreciation_bp.route('/months', methods=['GET'])
+def get_processed_months():
+    """Obtener lista de meses con depreciación procesada"""
+    try:
+        # Obtener meses únicos con registros de depreciación
+        months_data = db.session.query(
+            DepreciationRecord.year,
+            DepreciationRecord.month
+        ).distinct().order_by(
+            DepreciationRecord.year.desc(),
+            DepreciationRecord.month.desc()
+        ).all()
+
+        months = []
+        for year, month in months_data:
+            months.append({
+                'year': year,
+                'month': month,
+                'display': f"{_get_month_name(month)} {year}",
+                'key': f"{year}-{str(month).zfill(2)}"
+            })
+
+        return jsonify({
+            'success': True,
+            'months': months
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error obteniendo meses: {str(e)}'
+        }), 500
+
+
 @depreciation_bp.route('/process', methods=['POST'])
 def process_monthly_depreciation():
     """Procesar depreciación mensual y generar asiento contable"""
