@@ -365,7 +365,7 @@ def get_period_report():
         for rec in records:
             asset = Asset.query.get(rec.asset_id)
             if asset:
-                month_display = f"{rec.year}-{String(rec.month).zfill(2)}"
+                month_display = f"{rec.year}-{str(rec.month).zfill(2)}"
                 ws.cell(row=row, column=1).value = month_display
                 ws.cell(row=row, column=2).value = asset.code
                 ws.cell(row=row, column=3).value = asset.description
