@@ -283,6 +283,7 @@ class JournalEntry(db.Model):
     __tablename__ = 'journal_entries'
 
     id = db.Column(db.Integer, primary_key=True)
+    reference = db.Column(db.String(50), unique=True, nullable=True)
     entry_date = db.Column(db.Date, nullable=False, index=True)
     description = db.Column(db.String(255), nullable=False)
     debit_account_id = db.Column(db.Integer, db.ForeignKey('chart_of_accounts.id'))
@@ -291,10 +292,32 @@ class JournalEntry(db.Model):
     asset_id = db.Column(db.Integer, db.ForeignKey('assets.id'))
     year = db.Column(db.Integer, nullable=False, index=True)
     month = db.Column(db.Integer, nullable=False, index=True)
+    entry_type = db.Column(db.String(50), default='general')  # 'general', 'depreciation', 'adjustment'
+    status = db.Column(db.String(20), default='draft')  # 'draft', 'posted', 'cancelled'
+    total_debit = db.Column(db.Numeric(12, 2), default=0)
+    total_credit = db.Column(db.Numeric(12, 2), default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     debit_account = db.relationship('ChartOfAccounts', foreign_keys=[debit_account_id])
     credit_account = db.relationship('ChartOfAccounts', foreign_keys=[credit_account_id])
+    lines = db.relationship('JournalEntryLine', backref='journal_entry', lazy='dynamic', cascade='all, delete-orphan')
 
     def __repr__(self):
         return f'<JournalEntry {self.entry_date} - {self.amount}>'
+
+
+class JournalEntryLine(db.Model):
+    """Línea de Asiento Contable"""
+    __tablename__ = 'journal_entry_lines'
+
+    id = db.Column(db.Integer, primary_key=True)
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=False, index=True)
+    account_code = db.Column(db.String(50), nullable=False)
+    account_name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.String(255))
+    debit_amount = db.Column(db.Numeric(12, 2), default=0)
+    credit_amount = db.Column(db.Numeric(12, 2), default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f'<JournalEntryLine {self.account_code}>'

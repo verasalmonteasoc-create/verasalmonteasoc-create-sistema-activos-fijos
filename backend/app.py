@@ -119,6 +119,7 @@ def register_blueprints(app):
     from backend.routes.locations import locations_bp
     from backend.routes.reports import reports_bp
     from backend.routes.accounting import accounting_bp
+    from backend.routes.depreciation import depreciation_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
@@ -127,6 +128,7 @@ def register_blueprints(app):
     app.register_blueprint(locations_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(accounting_bp)
+    app.register_blueprint(depreciation_bp)
 
 
 # Crear aplicación

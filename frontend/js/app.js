@@ -206,6 +206,7 @@ function initNavigation() {
             // Recargar datos
             if (page === 'search-assets') initSearchAssets();
             if (page === 'accounting') loadAccounts();
+            if (page === 'depreciation') initDepreciationMonth();
             if (page === 'categories') loadCategories();
             if (page === 'departments') loadDepartments();
             if (page === 'locations') loadLocations();
@@ -1392,6 +1393,186 @@ async function submitImportAssets(e) {
         document.getElementById('importAssetsProgress').style.display = 'none';
         alert('Error: ' + error.message);
     }
+}
+
+// DEPRECIACIÓN MENSUAL
+let depreciationData = null;
+
+function initDepreciationMonth() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    document.getElementById('depreciationMonth').value = `${year}-${month}`;
+}
+
+async function calculateDepreciation() {
+    try {
+        const monthInput = document.getElementById('depreciationMonth').value;
+        if (!monthInput) {
+            alert('Por favor selecciona un mes y año');
+            return;
+        }
+
+        const [year, month] = monthInput.split('-');
+        const startDate = new Date(`${year}-${month}-01`);
+        const endDate = new Date(year, parseInt(month), 0);
+
+        const assetsRes = await fetch('/api/assets');
+        const assetsData = await assetsRes.json();
+
+        if (!assetsData.success) {
+            alert('Error al cargar activos');
+            return;
+        }
+
+        const activeAssets = assetsData.assets.filter(a => a.status === 'active');
+
+        if (activeAssets.length === 0) {
+            alert('No hay activos activos para depreciar');
+            return;
+        }
+
+        // Calcular depreciación
+        let totalDepreciation = 0;
+        const details = [];
+
+        activeAssets.forEach(asset => {
+            if (!asset.useful_life_years || asset.useful_life_years === 0) return;
+
+            const monthlyDepreciation = (asset.acquisition_cost / (asset.useful_life_years * 12));
+            totalDepreciation += monthlyDepreciation;
+
+            details.push({
+                asset_id: asset.id,
+                code: asset.code,
+                description: asset.description,
+                category: asset.category?.name || '-',
+                cost: asset.acquisition_cost,
+                monthlyDepreciation: monthlyDepreciation,
+                previousAccumulated: asset.accumulated_depreciation || 0,
+                newAccumulated: (asset.accumulated_depreciation || 0) + monthlyDepreciation
+            });
+        });
+
+        depreciationData = {
+            year: parseInt(year),
+            month: parseInt(month),
+            monthStr: new Date(`${year}-${month}-01`).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
+            totalAssets: details.length,
+            totalDepreciation: totalDepreciation,
+            details: details
+        };
+
+        displayDepreciationPreview();
+
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+}
+
+function displayDepreciationPreview() {
+    // Mostrar resumen
+    document.getElementById('depreciationSummary').style.display = 'block';
+    document.getElementById('depreciationDetails').style.display = 'block';
+    document.getElementById('depreciationActions').style.display = 'block';
+    document.getElementById('depreciationMessage').style.display = 'none';
+
+    document.getElementById('assetsCount').textContent = depreciationData.totalAssets;
+    document.getElementById('totalDepreciation').textContent = 'RD$ ' + depreciationData.totalDepreciation.toFixed(2);
+    document.getElementById('depreciationPeriod').textContent = depreciationData.monthStr;
+
+    // Mostrar tabla
+    const tbody = document.getElementById('depreciationTable');
+    tbody.innerHTML = '';
+
+    depreciationData.details.forEach(d => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td>${d.code}</td>
+            <td>${d.description}</td>
+            <td>${d.category}</td>
+            <td>RD$ ${d.cost.toFixed(2)}</td>
+            <td>RD$ ${d.monthlyDepreciation.toFixed(2)}</td>
+            <td>RD$ ${d.previousAccumulated.toFixed(2)}</td>
+            <td>RD$ ${d.newAccumulated.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+    });
+}
+
+async function processMonthlyDepreciation() {
+    try {
+        if (!depreciationData) {
+            alert('Debe calcular depreciación primero');
+            return;
+        }
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Procesando...';
+
+        const response = await fetch('/api/depreciation/process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                year: depreciationData.year,
+                month: depreciationData.month,
+                details: depreciationData.details
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('depreciationSummary').style.display = 'none';
+            document.getElementById('depreciationDetails').style.display = 'none';
+            document.getElementById('depreciationActions').style.display = 'none';
+
+            const msgDiv = document.getElementById('depreciationMessage');
+            msgDiv.style.display = 'block';
+            msgDiv.style.background = '#d4edda';
+            msgDiv.style.borderLeft = '4px solid #28a745';
+            msgDiv.innerHTML = `
+                <h4 style="color: #155724; margin-top: 0;">✓ Depreciación Procesada Exitosamente</h4>
+                <p><strong>Período:</strong> ${depreciationData.monthStr}</p>
+                <p><strong>Activos Procesados:</strong> ${depreciationData.totalAssets}</p>
+                <p><strong>Depreciación Total:</strong> RD$ ${depreciationData.totalDepreciation.toFixed(2)}</p>
+                <p><strong>Asiento Contable Generado:</strong> ${data.journal_entry_id}</p>
+                <p style="font-size: 12px; color: #666; margin-bottom: 0;">
+                    Se generó un asiento automático debitando la cuenta de Gasto de Depreciación y acreditando Depreciación Acumulada.
+                </p>
+            `;
+
+            depreciationData = null;
+            setTimeout(() => {
+                loadDashboard();
+                loadAssets();
+            }, 2000);
+        } else {
+            const msgDiv = document.getElementById('depreciationMessage');
+            msgDiv.style.display = 'block';
+            msgDiv.style.background = '#f8d7da';
+            msgDiv.style.borderLeft = '4px solid #dc3545';
+            msgDiv.innerHTML = `<h4 style="color: #721c24;">Error: ${data.message}</h4>`;
+        }
+
+        btn.disabled = false;
+        btn.textContent = '✓ Procesar Depreciación y Generar Asiento';
+
+    } catch (error) {
+        alert('Error: ' + error.message);
+        event.target.disabled = false;
+        event.target.textContent = '✓ Procesar Depreciación y Generar Asiento';
+    }
+}
+
+function cancelDepreciation() {
+    document.getElementById('depreciationMonth').value = '';
+    document.getElementById('depreciationSummary').style.display = 'none';
+    document.getElementById('depreciationDetails').style.display = 'none';
+    document.getElementById('depreciationActions').style.display = 'none';
+    document.getElementById('depreciationMessage').style.display = 'none';
+    depreciationData = null;
 }
 
 console.log('✓ App script loaded');
