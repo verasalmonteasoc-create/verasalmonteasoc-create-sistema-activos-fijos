@@ -1532,28 +1532,37 @@ async function processMonthlyDepreciation() {
             msgDiv.style.display = 'block';
             msgDiv.style.background = '#d4edda';
             msgDiv.style.borderLeft = '4px solid #28a745';
+            msgDiv.style.padding = '15px';
             msgDiv.innerHTML = `
                 <h4 style="color: #155724; margin-top: 0;">✓ Depreciación Procesada Exitosamente</h4>
                 <p><strong>Período:</strong> ${depreciationData.monthStr}</p>
                 <p><strong>Activos Procesados:</strong> ${depreciationData.totalAssets}</p>
                 <p><strong>Depreciación Total:</strong> RD$ ${depreciationData.totalDepreciation.toFixed(2)}</p>
-                <p><strong>Asiento Contable Generado:</strong> ${data.journal_entry_id}</p>
-                <p style="font-size: 12px; color: #666; margin-bottom: 0;">
+                <p><strong>Asiento Contable Generado:</strong> ${data.reference}</p>
+                <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
                     Se generó un asiento automático debitando la cuenta de Gasto de Depreciación y acreditando Depreciación Acumulada.
                 </p>
+                <button class="btn btn-success" onclick="downloadDepreciationReport(${depreciationData.year}, ${depreciationData.month})" style="background: #28a745; margin-top: 10px;">
+                    Descargar Reporte Excel
+                </button>
             `;
 
             depreciationData = null;
             setTimeout(() => {
                 loadDashboard();
                 loadAssets();
-            }, 2000);
+            }, 3000);
         } else {
             const msgDiv = document.getElementById('depreciationMessage');
             msgDiv.style.display = 'block';
             msgDiv.style.background = '#f8d7da';
             msgDiv.style.borderLeft = '4px solid #dc3545';
-            msgDiv.innerHTML = `<h4 style="color: #721c24;">Error: ${data.message}</h4>`;
+            msgDiv.style.padding = '15px';
+            if (response.status === 409) {
+                msgDiv.innerHTML = `<h4 style="color: #721c24; margin-top: 0;">⚠ Mes ya Procesado</h4><p style="color: #721c24;">${data.message}</p>`;
+            } else {
+                msgDiv.innerHTML = `<h4 style="color: #721c24; margin-top: 0;">✗ Error</h4><p style="color: #721c24;">${data.message}</p>`;
+            }
         }
 
         btn.disabled = false;
@@ -1564,6 +1573,16 @@ async function processMonthlyDepreciation() {
         event.target.disabled = false;
         event.target.textContent = '✓ Procesar Depreciación y Generar Asiento';
     }
+}
+
+function downloadDepreciationReport(year, month) {
+    const url = `/api/depreciation/report?year=${year}&month=${month}`;
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Depreciacion_${year}_${String(month).padStart(2, '0')}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 function cancelDepreciation() {

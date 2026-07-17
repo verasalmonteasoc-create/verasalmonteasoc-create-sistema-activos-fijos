@@ -208,6 +208,151 @@ def _get_month_name(month):
     return months.get(month, '')
 
 
+@depreciation_bp.route('/report', methods=['GET'])
+def get_depreciation_report():
+    """Generar reporte Excel de depreciación"""
+    try:
+        year = request.args.get('year', type=int)
+        month = request.args.get('month', type=int)
+
+        if not year or not month:
+            return jsonify({'success': False, 'message': 'Año y mes requeridos'}), 400
+
+        # Obtener registros de depreciación
+        dep_records = DepreciationRecord.query.filter_by(year=year, month=month).all()
+
+        if not dep_records:
+            return jsonify({'success': False, 'message': 'No hay registros de depreciación para este período'}), 404
+
+        # Obtener asiento contable
+        journal = JournalEntry.query.filter_by(year=year, month=month, entry_type='depreciation').first()
+
+        # Crear Excel
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from datetime import datetime
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Depreciación"
+
+        # Estilos
+        header_fill = PatternFill(start_color="003D7A", end_color="003D7A", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        title_font = Font(bold=True, size=14)
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        # Título
+        ws['A1'] = "REPORTE DE DEPRECIACIÓN MENSUAL"
+        ws['A1'].font = title_font
+        ws.merge_cells('A1:H1')
+
+        # Información del período
+        ws['A2'] = f"Período: {_get_month_name(month)} {year}"
+        ws['A3'] = f"Fecha de Reporte: {datetime.now().strftime('%d/%m/%Y')}"
+
+        # Tabla de depreciación
+        row = 5
+        headers = ["Código Activo", "Descripción", "Categoría", "Costo", "Deprec. Mensual", "Acumulada Anterior", "Acumulada Nueva", "Valor Neto"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+
+        # Datos
+        total_depreciation = Decimal('0')
+        row = 6
+        for rec in dep_records:
+            asset = Asset.query.get(rec.asset_id)
+            if asset:
+                ws.cell(row=row, column=1).value = asset.code
+                ws.cell(row=row, column=2).value = asset.description
+                ws.cell(row=row, column=3).value = asset.category.name if asset.category else ""
+                ws.cell(row=row, column=4).value = float(asset.acquisition_cost)
+                ws.cell(row=row, column=5).value = float(rec.depreciation_amount)
+                ws.cell(row=row, column=6).value = float(rec.accumulated_depreciation) - float(rec.depreciation_amount)
+                ws.cell(row=row, column=7).value = float(rec.accumulated_depreciation)
+                ws.cell(row=row, column=8).value = float(rec.net_book_value)
+
+                total_depreciation += rec.depreciation_amount
+                row += 1
+
+        # Totales
+        row += 1
+        ws.cell(row=row, column=1).value = "TOTAL"
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=5).value = float(total_depreciation)
+        ws.cell(row=row, column=5).font = Font(bold=True)
+
+        # Asiento contable
+        if journal:
+            row += 3
+            ws.cell(row=row, column=1).value = "ASIENTO CONTABLE GENERADO"
+            ws.cell(row=row, column=1).font = title_font
+            ws.merge_cells(f'A{row}:C{row}')
+
+            row += 1
+            ws.cell(row=row, column=1).value = f"Referencia: {journal.reference}"
+            ws.cell(row=row, column=2).value = f"Estado: {journal.status}"
+
+            row += 2
+            headers_journal = ["Cuenta", "Descripción", "Débito", "Crédito"]
+            for col, header in enumerate(headers_journal, 1):
+                cell = ws.cell(row=row, column=col)
+                cell.value = header
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.border = border
+
+            row += 1
+            lines = JournalEntryLine.query.filter_by(journal_entry_id=journal.id).all()
+            for line in lines:
+                ws.cell(row=row, column=1).value = line.account_code
+                ws.cell(row=row, column=2).value = line.account_name
+                ws.cell(row=row, column=3).value = float(line.debit_amount) if line.debit_amount > 0 else ""
+                ws.cell(row=row, column=4).value = float(line.credit_amount) if line.credit_amount > 0 else ""
+                row += 1
+
+            row += 1
+            ws.cell(row=row, column=1).value = "TOTALES"
+            ws.cell(row=row, column=1).font = Font(bold=True)
+            ws.cell(row=row, column=3).value = float(journal.total_debit)
+            ws.cell(row=row, column=3).font = Font(bold=True)
+            ws.cell(row=row, column=4).value = float(journal.total_credit)
+            ws.cell(row=row, column=4).font = Font(bold=True)
+
+        # Ajustar anchos de columna
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 30
+        ws.column_dimensions['C'].width = 20
+        for col in ['D', 'E', 'F', 'G', 'H']:
+            ws.column_dimensions[col].width = 18
+
+        # Guardar en memoria
+        import io
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return output.getvalue(), 200, {
+            'Content-Disposition': f'attachment; filename="Depreciacion_{year}_{str(month).zfill(2)}.xlsx"',
+            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        }
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error generando reporte: {str(e)}'
+        }), 500
+
+
 def _get_account_name(account_code):
     """Obtener nombre de cuenta desde su código"""
     account = ChartOfAccounts.query.filter_by(code=account_code).first()
