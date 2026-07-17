@@ -555,3 +555,90 @@ def _get_account_name(account_code):
     """Obtener nombre de cuenta desde su código"""
     account = ChartOfAccounts.query.filter_by(code=account_code).first()
     return account.name if account else account_code
+
+
+@depreciation_bp.route('/asset-entry/<int:asset_id>', methods=['POST'])
+def create_asset_journal_entry(asset_id):
+    """Crear asiento contable inicial para un activo (compra/adquisición)"""
+    try:
+        asset = Asset.query.get_or_404(asset_id)
+
+        # Verificar si la categoría tiene cuentas configuradas
+        category = asset.category
+        if not category.asset_account or not category.accumulated_depreciation_account:
+            return jsonify({
+                'success': False,
+                'message': 'La categoría del activo no tiene cuentas contables configuradas'
+            }), 400
+
+        # Buscar las cuentas
+        asset_account = ChartOfAccounts.query.filter_by(code=category.asset_account).first()
+        if not asset_account:
+            return jsonify({
+                'success': False,
+                'message': f'Cuenta de activo {category.asset_account} no encontrada'
+            }), 400
+
+        # Crear asiento contable de compra del activo
+        # Débito: Cuenta de Activo
+        # Crédito: Caja/Bancos (por ahora dejamos como balancing)
+        entry = JournalEntry(
+            entry_date=asset.acquisition_date,
+            description=f'Compra de Activo: {asset.code} - {asset.description}',
+            debit_account_id=asset_account.id,
+            amount=asset.acquisition_cost,
+            asset_id=asset.id,
+            year=asset.acquisition_date.year,
+            month=asset.acquisition_date.month,
+            entry_type='asset_purchase',
+            status='posted',
+            total_debit=asset.acquisition_cost,
+            total_credit=asset.acquisition_cost
+        )
+
+        db.session.add(entry)
+
+        # Crear líneas del asiento
+        # Línea de débito - Activo
+        line_debit = JournalEntryLine(
+            journal_entry=entry,
+            account_code=asset_account.code,
+            account_name=asset_account.name,
+            description=f'{asset.code} - {asset.description}',
+            debit_amount=asset.acquisition_cost,
+            credit_amount=Decimal('0.00')
+        )
+        db.session.add(line_debit)
+
+        # Línea de crédito - Contrapartida (asumimos como Cuentas por Pagar)
+        line_credit = JournalEntryLine(
+            journal_entry=entry,
+            account_code='2100',  # Código genérico para cuentas por pagar
+            account_name='Cuentas por Pagar',
+            description=f'Contrapartida: Compra de {asset.code}',
+            debit_amount=Decimal('0.00'),
+            credit_amount=asset.acquisition_cost
+        )
+        db.session.add(line_credit)
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'Asiento contable creado para el activo {asset.code}',
+            'entry': {
+                'id': entry.id,
+                'entry_date': entry.entry_date.isoformat(),
+                'description': entry.description,
+                'amount': float(entry.amount),
+                'status': entry.status,
+                'entry_type': entry.entry_type
+            }
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({
+            'success': False,
+            'message': f'Error creando asiento contable: {str(e)}'
+        }), 500

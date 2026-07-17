@@ -1,32 +1,18 @@
+# Virtual environment
+venv/
+env/
+ENV/
+*.venv
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual environments
-venv/
-env/
-ENV/
-env.bak/
-venv.bak/
+dist/
+build/
 
 # IDE
 .vscode/
@@ -34,85 +20,48 @@ venv.bak/
 *.swp
 *.swo
 *~
-.project
-.pydevproject
-.settings/
-*.sublime-workspace
-*.sublime-project
+.DS_Store
 
-# Environment
+# Environment variables
 .env
 .env.local
 .env.*.local
-.env.production
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
-*.sql.bak
 
-# Docker
-.dockerignore
-docker-compose.override.yml
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+temp/
+tmp/
 
 # OS
 .DS_Store
 Thumbs.db
-.directory
 
-# Node modules (si usas frontend tools)
+# Excel temporary files
+~$*.xlsx
+~$*.xls
+
+# Node modules
 node_modules/
-npm-debug.log
 package-lock.json
-yarn.lock
 
-# Uploads
-backend/uploads/*
-!backend/uploads/.gitkeep
-backend/backups/*
-!backend/backups/.gitkeep
+# Flask
+instance/
+.webassets-cache
 
-# Coverage
-.coverage
-.coverage.*
-htmlcov/
-.tox/
+# Testing
 .pytest_cache/
+.coverage
+htmlcov/
 
-# Temp files
-*.tmp
-*.bak
-*.swp
-*~
-
-# Editor backup files
-*.edit
-*.backup
-
-# Secrets
-secrets.json
-.secrets/
-
-# Cache
-.cache/
-*.cache
-
-# Production builds
-dist/
-build/
-
-# Additional
-.venv
-pip-log.txt
-pip-delete-this-directory.txt
-.DS_Store
-.env.vault
-.env.*.vault
+# Mac
+.AppleDouble
+.LSOverride

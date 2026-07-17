@@ -1,100 +1,126 @@
-# 🏢 Sistema de Gestión de Activos Fijos
+# Sistema de Gestión de Activos Fijos
 
-**Estado:** ✅ **COMPLETAMENTE OPERATIVO**
+Un sistema completo para la gestión de activos fijos con depreciación automática, reportes SAP-style y códigos QR para inventario.
 
-## 🚀 ACCESO INMEDIATO
+## 🎯 Características Principales
 
-```
-Frontend:    http://localhost:8090
-API:         http://localhost:5000/api
-Database:    localhost:5434
-```
+### ✅ Gestión de Activos
+- Crear, editar y eliminar activos fijos
+- Importar activos desde Excel
+- Código único automático para cada activo
+- Seguimiento de ubicación y responsable
 
-## ✨ FUNCIONALIDADES OPERATIVAS
+### ✅ Depreciación Automática
+- Cálculo automático por línea recta
+- Procesamiento mensual con un clic
+- Múltiples categorías configurables
+- Proyecciones futuras
 
-### 📊 Configuración Contable
-- ✅ Crear cuentas contables
-- ✅ Listar cuentas
-- ✅ Eliminar cuentas
-- ✅ Tipos soportados: Activo, Pasivo, Capital, Ingreso, Gasto
+### ✅ Asientos Contables
+- Generación automática de asientos
+- Vinculación con cuentas contables
+- Estados de asiento (draft, posted, cancelled)
 
-### 📁 Categorías de Activos
-- ✅ Crear categorías
-- ✅ Definir tasa de depreciación
-- ✅ Listar categorías
-- ✅ Eliminar categorías
+### ✅ Códigos QR
+- Generar QR para cada activo
+- Descargar como PNG
+- Imprimir etiquetas
+- Scaneable con smartphone
 
-### 💼 Gestión de Activos
-- ✅ Crear activos
-- ✅ Asignar categoría
-- ✅ Registrar costo
-- ✅ Definir vida útil
-- ✅ Ver inventario
-- ✅ Eliminar activos
+### ✅ Reportes Profesionales (Excel)
+1. Depreciación Detallada (por activo)
+2. Resumen de Depreciación (por categoría)
+3. Asientos Contables
+4. Movimiento de Activos
+5. Reconciliación (Activos vs Contabilidad)
+6. Pista de Auditoría
+7. Proyecciones
 
-## 🏗️ ARQUITECTURA
+### ✅ Gestión de Departamentos
+- Crear departamentos
+- Importar desde Excel
 
-```
-USUARIO → Navegador → Nginx → Flask API → PostgreSQL
-         localhost:8090  :5000      :5434
-```
+## 🛠️ Tecnología
 
-## 📦 COMPONENTES
+**Backend:** Python 3.11, Flask, SQLAlchemy, PostgreSQL
+**Frontend:** HTML5, CSS3, JavaScript, Chart.js
 
-| Servicio | Versión | Puerto | Estado |
-|----------|---------|--------|--------|
-| Nginx | Alpine | 8090 | ✅ |
-| Flask | 2.x | 5000 | ✅ |
-| PostgreSQL | 13 | 5434 | ✅ |
+## 📋 Requisitos
 
-## 🎯 ACCESO
+- Python 3.8+
+- PostgreSQL 10+
 
-- **URL:** http://localhost:8090
-- **Usuario:** Usuario
-- **Rol:** admin
-- **Acceso:** Directo (sin login)
+## 🚀 Instalación
 
-## 📝 DATOS DE PRUEBA
-
-Cuentas contables:
-- 1100 - Activos Fijos (Activo)
-- 2100 - Pasivos Corrientes (Pasivo)
-
-## 💻 COMANDOS
-
+### 1. Clonar Repositorio
 ```bash
-# Iniciar
-docker-compose up -d
-
-# Detener
-docker-compose down
-
-# Reiniciar
-docker-compose restart
-
-# Ver estado
-docker-compose ps
-
-# Ver logs
-docker-compose logs -f
+git clone https://github.com/tuusuario/sistema-activos-fijos.git
+cd sistema-activos-fijos
 ```
 
-## ✅ DEPLOYMENT CHECKLIST
+### 2. Crear Virtual Environment
+```bash
+python -m venv venv
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+```
 
-- ✅ Docker Compose configurado
-- ✅ Nginx corriendo
-- ✅ Flask API operacional
-- ✅ PostgreSQL conectada
-- ✅ Frontend funcional
-- ✅ CRUD completo
-- ✅ Datos de prueba cargados
+### 3. Instalar Dependencias
+```bash
+pip install -r requirements.txt
+```
 
-## 📄 DOCUMENTACIÓN
+### 4. Configurar .env
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=asset_management
+DB_USER=postgres
+DB_PASSWORD=tu_contraseña
+```
 
-Ver `DEPLOYMENT.md` para guía completa.
+### 5. Ejecutar Servidor
+```bash
+python run_app.py
+```
 
----
+La aplicación estará en: **http://localhost:5001**
 
-**Versión:** 1.0.0  
-**Estado:** Production Ready  
-**Fecha:** 2026-07-13
+## 📚 Uso Rápido
+
+**Agregar Activo:** Activos → Nuevo Activo
+**Depreciación Mensual:** Depreciación → Seleccionar mes → Procesar
+**Generar QR:** Activos → Click QR → Descargar/Imprimir
+**Asiento Contable:** Activos → Detalles → Generar Asiento
+**Reportes:** Reportes → Seleccionar tipo → Descargar Excel
+
+## 📁 Estructura
+
+```
+backend/
+├── routes/
+│   ├── assets.py (Activos + QR)
+│   ├── depreciation.py (Depreciación)
+│   ├── reports.py (Reportes)
+│   └── ...
+└── models.py
+
+frontend/
+├── index.html
+└── js/app.js
+```
+
+## 🔒 Seguridad
+
+- Validación de entrada
+- SQLAlchemy ORM (previene SQL Injection)
+- CORS configurado
+- Hashing de contraseñas
+
+## 📧 Contacto
+
+Edwin Vera Salmonte - verasalmonte.asoc@gmail.com
+
+## 📄 Licencia
+
+MIT License

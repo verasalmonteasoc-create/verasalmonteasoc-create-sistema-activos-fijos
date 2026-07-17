@@ -1,13 +1,16 @@
 """
-Rutas de Reportes
+Rutas de Reportes - SAP-style Fixed Asset Management
 """
 from flask import Blueprint, request, jsonify, send_file
 from flask_login import login_required
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
-from backend.models import db, Asset, AssetCategory, DepreciationRecord
+from backend.models import db, Asset, AssetCategory, DepreciationRecord, AuditLog, JournalEntry, JournalEntryLine
 from io import BytesIO
 import csv
+import logging
+
+logger = logging.getLogger(__name__)
 
 reports_bp = Blueprint('reports', __name__, url_prefix='/api/reports')
 
@@ -15,272 +18,359 @@ reports_bp = Blueprint('reports', __name__, url_prefix='/api/reports')
 @reports_bp.route('/assets-summary', methods=['GET'])
 def get_assets_summary():
     """Resumen general de activos"""
-    total_assets = Asset.query.count()
-    active_assets = Asset.query.filter_by(status='active').count()
-    inactive_assets = Asset.query.filter_by(status='inactive').count()
-    retired_assets = Asset.query.filter_by(status='retired').count()
+    try:
+        total_assets = Asset.query.count()
+        active_assets = Asset.query.filter_by(status='active').count()
+        inactive_assets = Asset.query.filter_by(status='inactive').count()
+        retired_assets = Asset.query.filter_by(status='retired').count()
 
-    total_cost = db.session.query(db.func.sum(Asset.acquisition_cost)).scalar() or 0
-    total_depreciation = 0
-    total_net_value = 0
+        total_cost = db.session.query(db.func.sum(Asset.acquisition_cost)).scalar() or 0
+        total_depreciation = 0
+        total_net_value = 0
 
-    for asset in Asset.query.all():
-        total_depreciation += asset.get_accumulated_depreciation()
-        total_net_value += asset.get_net_book_value()
+        for asset in Asset.query.all():
+            total_depreciation += asset.get_accumulated_depreciation()
+            total_net_value += asset.get_net_book_value()
 
-    return jsonify({
-        'success': True,
-        'summary': {
-            'total_assets': total_assets,
-            'active_assets': active_assets,
-            'inactive_assets': inactive_assets,
-            'retired_assets': retired_assets,
-            'total_acquisition_cost': float(total_cost),
-            'total_accumulated_depreciation': total_depreciation,
-            'total_net_book_value': total_net_value
-        }
-    }), 200
+        return jsonify({
+            'success': True,
+            'summary': {
+                'total_assets': total_assets,
+                'active_assets': active_assets,
+                'inactive_assets': inactive_assets,
+                'retired_assets': retired_assets,
+                'total_acquisition_cost': float(total_cost),
+                'total_accumulated_depreciation': total_depreciation,
+                'total_net_book_value': total_net_value
+            }
+        }), 200
+    except Exception as e:
+        logger.error(f"Error en assets-summary: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400
 
 
 @reports_bp.route('/by-category', methods=['GET'])
 def get_by_category():
     """Reporte de activos por categoría"""
-    categories = AssetCategory.query.all()
-    report = []
+    try:
+        categories = AssetCategory.query.all()
+        report = []
 
-    for cat in categories:
-        assets = Asset.query.filter_by(category_id=cat.id).all()
-        total_cost = sum(float(a.acquisition_cost) for a in assets)
-        total_depreciation = sum(a.get_accumulated_depreciation() for a in assets)
-        total_net_value = sum(a.get_net_book_value() for a in assets)
+        for cat in categories:
+            assets = Asset.query.filter_by(category_id=cat.id).all()
+            total_cost = sum(float(a.acquisition_cost) for a in assets)
+            total_depreciation = sum(a.get_accumulated_depreciation() for a in assets)
+            total_net_value = sum(a.get_net_book_value() for a in assets)
 
-        report.append({
-            'category': cat.name,
-            'depreciation_rate': float(cat.depreciation_rate),
-            'asset_count': len(assets),
-            'total_acquisition_cost': total_cost,
-            'total_accumulated_depreciation': total_depreciation,
-            'total_net_book_value': total_net_value
-        })
+            report.append({
+                'category': cat.name,
+                'depreciation_rate': float(cat.depreciation_rate),
+                'asset_count': len(assets),
+                'total_acquisition_cost': total_cost,
+                'total_accumulated_depreciation': total_depreciation,
+                'total_net_book_value': total_net_value
+            })
 
-    return jsonify({
-        'success': True,
-        'report': report
-    }), 200
-
-
-@reports_bp.route('/by-department', methods=['GET'])
-def get_by_department():
-    """Reporte de activos por departamento"""
-    assets = Asset.query.all()
-    departments = {}
-
-    for asset in assets:
-        dept = asset.department or 'Sin departamento'
-        if dept not in departments:
-            departments[dept] = []
-        departments[dept].append(asset)
-
-    report = []
-    for dept, assets_list in departments.items():
-        total_cost = sum(float(a.acquisition_cost) for a in assets_list)
-        total_depreciation = sum(a.get_accumulated_depreciation() for a in assets_list)
-        total_net_value = sum(a.get_net_book_value() for a in assets_list)
-
-        report.append({
-            'department': dept,
-            'asset_count': len(assets_list),
-            'total_acquisition_cost': total_cost,
-            'total_accumulated_depreciation': total_depreciation,
-            'total_net_book_value': total_net_value
-        })
-
-    return jsonify({
-        'success': True,
-        'report': sorted(report, key=lambda x: x['total_acquisition_cost'], reverse=True)
-    }), 200
+        return jsonify({
+            'success': True,
+            'report': report
+        }), 200
+    except Exception as e:
+        logger.error(f"Error en by-category: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400
 
 
 @reports_bp.route('/depreciation', methods=['GET'])
 def get_depreciation_report():
     """Reporte de depreciación por período"""
-    year = request.args.get('year', datetime.utcnow().year, type=int)
-    month = request.args.get('month', type=int)
+    try:
+        year = request.args.get('year', datetime.utcnow().year, type=int)
+        month = request.args.get('month', type=int)
 
-    query = DepreciationRecord.query.filter_by(year=year)
-    if month:
-        query = query.filter_by(month=month)
+        query = DepreciationRecord.query.filter_by(year=year)
+        if month:
+            query = query.filter_by(month=month)
 
-    records = query.order_by(
-        DepreciationRecord.asset_id,
-        DepreciationRecord.month
-    ).all()
+        records = query.order_by(
+            DepreciationRecord.asset_id,
+            DepreciationRecord.month
+        ).all()
 
-    total_depreciation = sum(float(r.depreciation_amount) for r in records)
+        total_depreciation = sum(float(r.depreciation_amount) for r in records)
 
-    return jsonify({
-        'success': True,
-        'period': {
-            'year': year,
-            'month': month
-        },
-        'total_depreciation': total_depreciation,
-        'records': [{
-            'asset_code': r.asset.code,
-            'asset_description': r.asset.description,
-            'category': r.asset.category.name,
-            'month_year': r.get_display_month(),
-            'depreciation_amount': float(r.depreciation_amount),
-            'accumulated_depreciation': float(r.accumulated_depreciation),
-            'net_book_value': float(r.net_book_value)
-        } for r in records],
-        'record_count': len(records)
-    }), 200
-
-
-@reports_bp.route('/depreciation-schedule/<int:asset_id>', methods=['GET'])
-def get_depreciation_schedule(asset_id):
-    """Cronograma de depreciación de un activo"""
-    asset = Asset.query.get_or_404(asset_id)
-    records = DepreciationRecord.query.filter_by(asset_id=asset_id).order_by(
-        DepreciationRecord.year,
-        DepreciationRecord.month
-    ).all()
-
-    return jsonify({
-        'success': True,
-        'asset': {
-            'code': asset.code,
-            'description': asset.description,
-            'category': asset.category.name,
-            'acquisition_cost': float(asset.acquisition_cost),
-            'acquisition_date': asset.acquisition_date.isoformat(),
-            'useful_life_years': asset.useful_life_years,
-            'monthly_depreciation': asset.get_monthly_depreciation(),
-            'status': asset.status
-        },
-        'schedule': [{
-            'month_year': r.get_display_month(),
-            'depreciation_amount': float(r.depreciation_amount),
-            'accumulated_depreciation': float(r.accumulated_depreciation),
-            'net_book_value': float(r.net_book_value)
-        } for r in records]
-    }), 200
+        return jsonify({
+            'success': True,
+            'period': {
+                'year': year,
+                'month': month
+            },
+            'total_depreciation': total_depreciation,
+            'records': [{
+                'asset_code': r.asset.code,
+                'asset_description': r.asset.description,
+                'category': r.asset.category.name,
+                'month_year': r.get_display_month(),
+                'depreciation_amount': float(r.depreciation_amount),
+                'accumulated_depreciation': float(r.accumulated_depreciation),
+                'net_book_value': float(r.net_book_value)
+            } for r in records],
+            'record_count': len(records)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error en depreciation: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400
 
 
-@reports_bp.route('/aging-analysis', methods=['GET'])
-def get_aging_analysis():
-    """Análisis de antigüedad de activos"""
-    today = datetime.utcnow().date()
-    assets = Asset.query.filter_by(status='active').all()
+@reports_bp.route('/depreciation-detail-excel', methods=['GET'])
+def get_depreciation_detail_excel():
+    """Reporte detallado de depreciación por activo (Excel)"""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    # Categorizar por antigüedad
-    ranges = {
-        'menos_1_ano': {'label': 'Menos de 1 año', 'min': 0, 'max': 365},
-        '1_a_3_anos': {'label': '1 a 3 años', 'min': 366, 'max': 1095},
-        '3_a_5_anos': {'label': '3 a 5 años', 'min': 1096, 'max': 1825},
-        'mas_5_anos': {'label': 'Más de 5 años', 'min': 1826, 'max': 999999}
-    }
+        year = request.args.get('year', datetime.utcnow().year, type=int)
+        month = request.args.get('month', type=int)
 
-    for range_key in ranges:
-        ranges[range_key]['assets'] = []
-        ranges[range_key]['total_cost'] = 0
-        ranges[range_key]['total_net_value'] = 0
+        query = DepreciationRecord.query.filter_by(year=year)
+        if month:
+            query = query.filter_by(month=month)
 
-    for asset in assets:
-        days_old = (today - asset.acquisition_date).days
-        cost = float(asset.acquisition_cost)
-        net_value = asset.get_net_book_value()
+        records = query.order_by(DepreciationRecord.asset_id).all()
 
-        for range_key, range_info in ranges.items():
-            if range_info['min'] <= days_old <= range_info['max']:
-                range_info['assets'].append({
-                    'code': asset.code,
-                    'description': asset.description,
-                    'days_old': days_old,
-                    'acquisition_cost': cost,
-                    'net_book_value': net_value
-                })
-                range_info['total_cost'] += cost
-                range_info['total_net_value'] += net_value
-                break
+        if not records:
+            return jsonify({'success': False, 'message': 'No hay datos de depreciación para el período'}), 404
 
-    report = [{
-        'range': ranges[key]['label'],
-        'asset_count': len(ranges[key]['assets']),
-        'total_acquisition_cost': ranges[key]['total_cost'],
-        'total_net_book_value': ranges[key]['total_net_value'],
-        'assets': ranges[key]['assets']
-    } for key in ranges]
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Depreciación Detallada"
 
-    return jsonify({
-        'success': True,
-        'analysis_date': today.isoformat(),
-        'report': report
-    }), 200
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                        top=Side(style='thin'), bottom=Side(style='thin'))
+        currency_format = '_-$* #,##0.00_-;-$* #,##0.00_-;_-$* "-"??_-;_-@_-'
 
+        headers = ['Código', 'Descripción', 'Categoría', 'Mes/Año', 'Costo Adquisición',
+                   'Depreciación Mensual', 'Depreciación Acumulada', 'Valor Neto en Libros']
 
-@reports_bp.route('/export/csv', methods=['GET'])
-def export_csv():
-    """Exportar activos a CSV"""
-    assets = Asset.query.all()
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = border
 
-    # Crear CSV en memoria
-    output = BytesIO()
-    writer = csv.writer(output)
+        row = 2
+        for record in records:
+            ws.cell(row=row, column=1).value = record.asset.code
+            ws.cell(row=row, column=2).value = record.asset.description
+            ws.cell(row=row, column=3).value = record.asset.category.name
+            ws.cell(row=row, column=4).value = record.get_display_month()
+            ws.cell(row=row, column=5).value = float(record.asset.acquisition_cost)
+            ws.cell(row=row, column=6).value = float(record.depreciation_amount)
+            ws.cell(row=row, column=7).value = float(record.accumulated_depreciation)
+            ws.cell(row=row, column=8).value = float(record.net_book_value)
 
-    # Encabezados
-    writer.writerow([
-        'Código', 'Descripción', 'Categoría', 'Fecha Adquisición', 'Costo Adquisición',
-        'Depreciación Acumulada', 'Valor Neto en Libros', 'Departamento', 'Responsable', 'Estado'
-    ])
+            for col in range(1, 9):
+                cell = ws.cell(row=row, column=col)
+                cell.border = border
+                if col >= 5:
+                    cell.number_format = currency_format
+                cell.alignment = Alignment(horizontal='right' if col >= 5 else 'left')
 
-    # Datos
-    for asset in assets:
-        writer.writerow([
-            asset.code,
-            asset.description,
-            asset.category.name,
-            asset.acquisition_date.isoformat(),
-            float(asset.acquisition_cost),
-            asset.get_accumulated_depreciation(),
-            asset.get_net_book_value(),
-            asset.department or '',
-            asset.responsible or '',
-            asset.status
-        ])
+            row += 1
 
-    output.seek(0)
-    return send_file(
-        output,
-        mimetype='text/csv',
-        as_attachment=True,
-        download_name=f'activos_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.csv'
-    )
+        ws.column_dimensions['A'].width = 15
+        ws.column_dimensions['B'].width = 30
+        ws.column_dimensions['C'].width = 20
+        ws.column_dimensions['D'].width = 15
+        for col in ['E', 'F', 'G', 'H']:
+            ws.column_dimensions[col].width = 18
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        filename = f'reporte_depreciacion_detallada_{year}'
+        if month:
+            filename += f'{month:02d}'
+        filename += '.xlsx'
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        logger.error(f"Error generando depreciation-detail-excel: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400
 
 
-@reports_bp.route('/depreciation-forecast/<int:months>', methods=['GET'])
-def get_depreciation_forecast(months):
-    """Proyección de depreciación futura"""
-    if months < 1 or months > 120:
-        return jsonify({'success': False, 'message': 'Meses debe estar entre 1 y 120'}), 400
+@reports_bp.route('/reconciliation-excel', methods=['GET'])
+def get_reconciliation_excel():
+    """Reporte de reconciliación activos vs contabilidad"""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
-    assets = Asset.query.filter_by(status='active').all()
-    forecast = []
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Reconciliación"
 
-    for i in range(1, months + 1):
-        total_monthly = 0
-        for asset in assets:
-            if not asset.is_fully_depreciated():
-                total_monthly += asset.get_monthly_depreciation()
+        header_fill = PatternFill(start_color="1565C0", end_color="1565C0", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                        top=Side(style='thin'), bottom=Side(style='thin'))
+        currency_format = '_-$* #,##0.00_-;-$* #,##0.00_-;_-$* "-"??_-;_-@_-'
 
-        forecast.append({
-            'month': i,
-            'forecasted_depreciation': total_monthly
-        })
+        headers = ['Categoría', 'Activos en Sistema', 'Costo Total Sistema', 'Depreciación Sistema',
+                   'Valor Neto Sistema', 'Varianza']
 
-    return jsonify({
-        'success': True,
-        'forecast_months': months,
-        'forecast': forecast
-    }), 200
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+
+        categories = AssetCategory.query.all()
+        row = 2
+
+        total_assets = 0
+        total_cost = 0
+        total_depreciation = 0
+        total_net = 0
+
+        for cat in categories:
+            assets = Asset.query.filter_by(category_id=cat.id).all()
+
+            cat_total_cost = sum(float(a.acquisition_cost) for a in assets)
+            cat_total_depreciation = sum(a.get_accumulated_depreciation() for a in assets)
+            cat_total_net = sum(a.get_net_book_value() for a in assets)
+
+            ws.cell(row=row, column=1).value = cat.name
+            ws.cell(row=row, column=2).value = len(assets)
+            ws.cell(row=row, column=3).value = cat_total_cost
+            ws.cell(row=row, column=4).value = cat_total_depreciation
+            ws.cell(row=row, column=5).value = cat_total_net
+            ws.cell(row=row, column=6).value = 0
+
+            for col in range(1, 7):
+                cell = ws.cell(row=row, column=col)
+                cell.border = border
+                if col >= 3:
+                    cell.number_format = currency_format
+                    cell.alignment = Alignment(horizontal='right')
+
+            total_assets += len(assets)
+            total_cost += cat_total_cost
+            total_depreciation += cat_total_depreciation
+            total_net += cat_total_net
+            row += 1
+
+        ws.cell(row=row, column=1).value = "TOTAL"
+        ws.cell(row=row, column=2).value = total_assets
+        ws.cell(row=row, column=3).value = total_cost
+        ws.cell(row=row, column=4).value = total_depreciation
+        ws.cell(row=row, column=5).value = total_net
+
+        for col in range(1, 7):
+            cell = ws.cell(row=row, column=col)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+            cell.border = border
+            if col >= 3:
+                cell.number_format = currency_format
+
+        for col in ['A', 'B', 'C', 'D', 'E', 'F']:
+            ws.column_dimensions[col].width = 22
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'reporte_reconciliacion_{datetime.utcnow().strftime("%Y%m%d")}.xlsx'
+        )
+    except Exception as e:
+        logger.error(f"Error generando reconciliation-excel: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400
+
+
+@reports_bp.route('/audit-trail-excel', methods=['GET'])
+def get_audit_trail_excel():
+    """Reporte de pista de auditoría"""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, PatternFill, Border, Side
+
+        days = request.args.get('days', 30, type=int)
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+
+        logs = AuditLog.query.filter(AuditLog.timestamp >= cutoff_date).order_by(AuditLog.timestamp.desc()).all()
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Pista de Auditoría"
+
+        header_fill = PatternFill(start_color="FF6F00", end_color="FF6F00", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=11)
+        border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                        top=Side(style='thin'), bottom=Side(style='thin'))
+
+        headers = ['Fecha/Hora', 'Usuario', 'Entidad', 'ID', 'Acción', 'Descripción', 'Dirección IP']
+
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col)
+            cell.value = header
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.border = border
+
+        row = 2
+        for log in logs:
+            user_name = log.user.username if log.user else "Sistema"
+
+            ws.cell(row=row, column=1).value = log.timestamp
+            ws.cell(row=row, column=2).value = user_name
+            ws.cell(row=row, column=3).value = log.entity_type
+            ws.cell(row=row, column=4).value = log.entity_id or ""
+            ws.cell(row=row, column=5).value = log.action
+            ws.cell(row=row, column=6).value = log.description or ""
+            ws.cell(row=row, column=7).value = log.ip_address or ""
+
+            for col in range(1, 8):
+                cell = ws.cell(row=row, column=col)
+                cell.border = border
+                if col == 1:
+                    cell.number_format = 'yyyy-mm-dd hh:mm:ss'
+
+            row += 1
+
+        ws.column_dimensions['A'].width = 20
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 10
+        ws.column_dimensions['E'].width = 12
+        ws.column_dimensions['F'].width = 30
+        ws.column_dimensions['G'].width = 15
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'reporte_pista_auditoria_{datetime.utcnow().strftime("%Y%m%d")}.xlsx'
+        )
+    except Exception as e:
+        logger.error(f"Error generando audit-trail-excel: {str(e)}")
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400

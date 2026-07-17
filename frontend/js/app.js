@@ -681,6 +681,68 @@ async function deleteDepartment(id) {
     }
 }
 
+function openImportDepartmentsModal() {
+    document.getElementById('importDepartmentsModal').classList.add('active');
+    document.getElementById('importDepartmentsResults').style.display = 'none';
+    document.getElementById('importDepartmentsFile').value = '';
+}
+
+function closeImportDepartmentsModal() {
+    document.getElementById('importDepartmentsModal').classList.remove('active');
+}
+
+async function submitImportDepartments(e) {
+    e.preventDefault();
+    const file = document.getElementById('importDepartmentsFile').files[0];
+
+    if (!file) {
+        alert('Selecciona un archivo');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        document.getElementById('importDepartmentsProgress').style.display = 'block';
+        document.getElementById('importDepartmentsResults').style.display = 'none';
+
+        const res = await fetch('/api/departments/import', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await res.json();
+
+        document.getElementById('importDepartmentsProgress').style.display = 'none';
+        document.getElementById('importDepartmentsResults').style.display = 'block';
+
+        if (data.success) {
+            let resultsText = `✓ ${data.imported_count} departamentos importados exitosamente`;
+            if (data.errors && data.errors.length > 0) {
+                resultsText += `\n\n⚠ ${data.errors.length} errores:`;
+            }
+            document.getElementById('importDepartmentsResultsText').textContent = resultsText;
+
+            if (data.errors && data.errors.length > 0) {
+                const errorsList = document.getElementById('importDepartmentsErrorsList');
+                errorsList.innerHTML = data.errors.map(err => `<li>${err}</li>`).join('');
+            }
+
+            setTimeout(() => {
+                closeImportDepartmentsModal();
+                loadDepartments();
+                loadAssets();
+            }, 2000);
+        } else {
+            document.getElementById('importDepartmentsResultsText').textContent = `✗ Error: ${data.message}`;
+        }
+    } catch (error) {
+        document.getElementById('importDepartmentsProgress').style.display = 'none';
+        document.getElementById('importDepartmentsResults').style.display = 'block';
+        document.getElementById('importDepartmentsResultsText').textContent = `✗ Error: ${error.message}`;
+    }
+}
+
 // LOCALIDADES
 async function loadLocations() {
     try {
@@ -842,8 +904,9 @@ async function loadAssets() {
                     <td>${asset.department || '-'}</td>
                     <td>RD$ ${parseFloat(asset.acquisition_cost).toLocaleString('es-DO', {minimumFractionDigits: 2})}</td>
                     <td>
-                        <button class="btn" onclick="openEditAssetModal(${JSON.stringify(asset).replace(/"/g, '&quot;')})">Editar</button>
-                        <button class="btn btn-danger" onclick="deleteAsset(${asset.id})">Eliminar</button>
+                        <button class="btn" onclick="openEditAssetModal(${JSON.stringify(asset).replace(/"/g, '&quot;')})" style="font-size: 12px;">Editar</button>
+                        <button class="btn" onclick="showAssetQR(${asset.id}, '${asset.code}')" style="background: #8B5CF6; font-size: 12px;"><i class="fas fa-qrcode"></i> QR</button>
+                        <button class="btn btn-danger" onclick="deleteAsset(${asset.id})" style="font-size: 12px;">Eliminar</button>
                     </td>
                 </tr>
             `).join('');
@@ -1075,6 +1138,7 @@ function setupFormHandlers() {
     document.getElementById('assetForm').addEventListener('submit', submitAsset);
     document.getElementById('editAssetForm').addEventListener('submit', submitEditAsset);
     document.getElementById('departmentForm').addEventListener('submit', submitDepartment);
+    document.getElementById('importDepartmentsForm').addEventListener('submit', submitImportDepartments);
     document.getElementById('locationForm').addEventListener('submit', submitLocation);
 
     // Event listener para botones editar (delegado)
@@ -1712,6 +1776,147 @@ function cancelDepreciation() {
     document.getElementById('depreciationActions').style.display = 'none';
     document.getElementById('depreciationMessage').style.display = 'none';
     depreciationData = null;
+}
+
+// ====== REPORTES SAP ======
+function getReportParams() {
+    const year = document.getElementById('reportYear').value;
+    const month = document.getElementById('reportMonth').value;
+    let params = `year=${year}`;
+    if (month) params += `&month=${month}`;
+    return params;
+}
+
+function downloadDepreciationDetail() {
+    const params = getReportParams();
+    window.location.href = `/api/reports/depreciation-detail-excel?${params}`;
+}
+
+function downloadDepreciationSummary() {
+    const params = getReportParams();
+    window.location.href = `/api/reports/depreciation-summary-excel?${params}`;
+}
+
+function downloadJournalEntries() {
+    const params = getReportParams();
+    window.location.href = `/api/reports/journal-entries-excel?${params}`;
+}
+
+function downloadAssetMovement() {
+    const year = document.getElementById('reportYear').value;
+    window.location.href = `/api/reports/asset-movement-excel?year=${year}`;
+}
+
+function downloadReconciliation() {
+    window.location.href = `/api/reports/reconciliation-excel`;
+}
+
+function downloadAuditTrail() {
+    window.location.href = `/api/reports/audit-trail-excel?days=30`;
+}
+
+// ====== CÓDIGO QR ======
+async function showAssetQR(assetId, assetCode) {
+    try {
+        const response = await fetch(`/api/assets/${assetId}/qrcode-data`);
+        const data = await response.json();
+
+        if (data.success) {
+            // Crear modal con QR
+            const modal = document.getElementById('qrModal');
+            document.getElementById('qrAssetCode').textContent = data.asset_code;
+            document.getElementById('qrAssetDesc').textContent = data.asset_description;
+            document.getElementById('qrImage').src = data.qr_data_uri;
+
+            // Guardar el ID del asset para descargar
+            document.getElementById('qrDownloadBtn').onclick = () => downloadAssetQR(assetId, data.asset_code);
+
+            modal.classList.add('active');
+        }
+    } catch (error) {
+        console.error('Error generando QR:', error);
+        alert('Error al generar el código QR');
+    }
+}
+
+function downloadAssetQR(assetId, assetCode) {
+    const link = document.createElement('a');
+    link.href = `/api/assets/${assetId}/qrcode`;
+    link.download = `QR_${assetCode}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function closeQRModal() {
+    document.getElementById('qrModal').classList.remove('active');
+}
+
+function printQR() {
+    const printWindow = window.open('', '', 'width=600, height=700');
+    const qrImage = document.getElementById('qrImage').src;
+    const assetCode = document.getElementById('qrAssetCode').textContent;
+    const assetDesc = document.getElementById('qrAssetDesc').textContent;
+
+    printWindow.document.write(`
+        <html>
+            <head>
+                <title>QR - ${assetCode}</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+                    h2 { color: #003D7A; margin-bottom: 20px; }
+                    .qr-container { padding: 20px; border: 2px solid #ddd; border-radius: 8px; margin: 20px 0; }
+                    img { max-width: 400px; height: auto; }
+                    .info { margin: 20px 0; font-size: 14px; }
+                    .info p { margin: 5px 0; }
+                </style>
+            </head>
+            <body>
+                <h2>CÓDIGO QR DE ACTIVO</h2>
+                <div class="info">
+                    <p><strong>Código:</strong> ${assetCode}</p>
+                    <p><strong>Descripción:</strong> ${assetDesc}</p>
+                </div>
+                <div class="qr-container">
+                    <img src="${qrImage}" alt="QR Code">
+                </div>
+                <p style="font-size: 12px; margin-top: 20px; color: #666;">Escanea este código QR para ver los detalles del activo</p>
+            </body>
+        </html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+}
+
+// ====== ASIENTOS CONTABLES ======
+async function createAssetJournalEntry() {
+    const assetId = document.getElementById('assetDetailsModal').dataset.assetId;
+
+    if (!assetId) {
+        alert('No se ha seleccionado un activo');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/depreciation/asset-entry/${assetId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert(`✓ Asiento contable creado correctamente\n\nAsiento ID: ${data.entry.id}\nFecha: ${data.entry.entry_date}\nEstado: ${data.entry.status}\nMonto: RD$ ${parseFloat(data.entry.amount).toLocaleString('es-DO', {minimumFractionDigits: 2})}`);
+            closeAssetDetailsModal();
+        } else {
+            alert(`Error: ${data.message}`);
+        }
+    } catch (error) {
+        console.error('Error creando asiento contable:', error);
+        alert('Error al crear el asiento contable');
+    }
 }
 
 console.log('✓ App script loaded');

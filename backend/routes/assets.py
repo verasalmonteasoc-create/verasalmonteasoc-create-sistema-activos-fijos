@@ -6,6 +6,7 @@ from flask_login import current_user, login_required
 from datetime import datetime
 from decimal import Decimal
 from backend.models import db, Asset, AssetCategory, DepreciationRecord, AuditLog, Department
+from io import BytesIO
 import os
 import openpyxl
 from werkzeug.utils import secure_filename
@@ -603,3 +604,83 @@ def import_assets():
             'success': False,
             'message': f'Error: {str(e)}'
         }), 400
+
+
+@assets_bp.route('/<int:asset_id>/qrcode', methods=['GET'])
+def get_asset_qrcode(asset_id):
+    """Generar código QR para un activo"""
+    try:
+        import qrcode
+
+        asset = Asset.query.get_or_404(asset_id)
+
+        # Información que contendrá el QR - más compacta
+        qr_data = f"{asset.code}|{asset.description}|{asset.category.name}|RD$ {float(asset.acquisition_cost):,.2f}|{asset.acquisition_date.strftime('%d/%m/%Y')}"
+
+        # Generar QR
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        # Guardar en memoria
+        img_io = BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+
+        return send_file(
+            img_io,
+            mimetype='image/png',
+            as_attachment=True,
+            download_name=f'QR_{asset.code}.png'
+        )
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error generando QR: {str(e)}'}), 500
+
+
+@assets_bp.route('/<int:asset_id>/qrcode-data', methods=['GET'])
+def get_qrcode_data_uri(asset_id):
+    """Retornar QR como data URI (para mostrar en página)"""
+    try:
+        import qrcode
+        import base64
+
+        asset = Asset.query.get_or_404(asset_id)
+
+        qr_data = f"{asset.code}|{asset.description}|{asset.category.name}|RD$ {float(asset.acquisition_cost):,.2f}|{asset.acquisition_date.strftime('%d/%m/%Y')}"
+
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_M,
+            box_size=8,
+            border=2,
+        )
+        qr.add_data(qr_data)
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        # Convertir a data URI
+        img_io = BytesIO()
+        img.save(img_io, 'PNG')
+        img_io.seek(0)
+        img_base64 = base64.b64encode(img_io.getvalue()).decode('utf-8')
+        data_uri = f"data:image/png;base64,{img_base64}"
+
+        return jsonify({
+            'success': True,
+            'asset_code': asset.code,
+            'asset_description': asset.description,
+            'qr_data_uri': data_uri
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error generando QR: {str(e)}'
+        }), 500

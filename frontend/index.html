@@ -107,6 +107,7 @@
                 <a href="#" data-page="departments" class="nav-link"><i class="fas fa-building"></i> Departamentos</a>
                 <a href="#" data-page="locations" class="nav-link"><i class="fas fa-map-marker-alt"></i> Localidades</a>
                 <a href="#" data-page="assets" class="nav-link"><i class="fas fa-list"></i> Activos</a>
+                <a href="#" data-page="reports" class="nav-link"><i class="fas fa-file-excel"></i> Reportes</a>
             </div>
         </aside>
 
@@ -266,6 +267,7 @@
                 <div id="departments-page" class="page">
                     <h2>Departamentos</h2>
                     <button class="btn btn-success" onclick="openDepartmentModal()">Nuevo Departamento</button>
+                    <button class="btn" onclick="openImportDepartmentsModal()" style="background: #17a2b8;">Importar Excel</button>
                     <table>
                         <thead><tr><th>Nombre</th><th>Descripción</th><th>Acciones</th></tr></thead>
                         <tbody id="departmentsTable"><tr><td colspan="3">Cargando...</td></tr></tbody>
@@ -377,6 +379,117 @@
                                 <strong>Depreciación total:</strong> <span id="periodDepreciation"></span>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <div id="reports-page" class="page">
+                    <h2>Reportes - Sistema SAP de Activos Fijos</h2>
+
+                    <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px;">
+                        <div class="filter-row">
+                            <div class="filter-group">
+                                <label>Año:</label>
+                                <input type="number" id="reportYear" min="2000" max="2099" value="2026" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            </div>
+                            <div class="filter-group">
+                                <label>Mes (opcional):</label>
+                                <select id="reportMonth" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                                    <option value="">Todos los meses</option>
+                                    <option value="1">Enero</option>
+                                    <option value="2">Febrero</option>
+                                    <option value="3">Marzo</option>
+                                    <option value="4">Abril</option>
+                                    <option value="5">Mayo</option>
+                                    <option value="6">Junio</option>
+                                    <option value="7">Julio</option>
+                                    <option value="8">Agosto</option>
+                                    <option value="9">Septiembre</option>
+                                    <option value="10">Octubre</option>
+                                    <option value="11">Noviembre</option>
+                                    <option value="12">Diciembre</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                        <!-- Depreciation Detail Report -->
+                        <div style="background: white; border-left: 4px solid #0EA5E9; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0; margin-bottom: 15px;">
+                                <i class="fas fa-chart-bar"></i> Depreciación Detallada
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Reporte detallado de depreciación por activo individual</p>
+                            <button class="btn" onclick="downloadDepreciationDetail()" style="width: 100%;">
+                                <i class="fas fa-download"></i> Descargar Excel
+                            </button>
+                        </div>
+
+                        <!-- Depreciation Summary Report -->
+                        <div style="background: white; border-left: 4px solid #F97316; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0; margin-bottom: 15px;">
+                                <i class="fas fa-chart-pie"></i> Resumen de Depreciación
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Resumen consolidado por categoría de activo</p>
+                            <button class="btn" onclick="downloadDepreciationSummary()" style="width: 100%;">
+                                <i class="fas fa-download"></i> Descargar Excel
+                            </button>
+                        </div>
+
+                        <!-- Journal Entries Report -->
+                        <div style="background: white; border-left: 4px solid #10B981; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0; margin-bottom: 15px;">
+                                <i class="fas fa-book"></i> Asientos Contables
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Registro de asientos contables por período</p>
+                            <button class="btn" onclick="downloadJournalEntries()" style="width: 100%;">
+                                <i class="fas fa-download"></i> Descargar Excel
+                            </button>
+                        </div>
+
+                        <!-- Asset Movement Report -->
+                        <div style="background: white; border-left: 4px solid #8B5CF6; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0; margin-bottom: 15px;">
+                                <i class="fas fa-exchange-alt"></i> Movimiento de Activos
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Adiciones y retiros de activos en el período</p>
+                            <button class="btn" onclick="downloadAssetMovement()" style="width: 100%;">
+                                <i class="fas fa-download"></i> Descargar Excel
+                            </button>
+                        </div>
+
+                        <!-- Reconciliation Report -->
+                        <div style="background: white; border-left: 4px solid #EC4899; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0; margin-bottom: 15px;">
+                                <i class="fas fa-balance-scale"></i> Reconciliación
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Reconciliación activos vs contabilidad</p>
+                            <button class="btn" onclick="downloadReconciliation()" style="width: 100%;">
+                                <i class="fas fa-download"></i> Descargar Excel
+                            </button>
+                        </div>
+
+                        <!-- Audit Trail Report -->
+                        <div style="background: white; border-left: 4px solid #DC2626; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0; margin-bottom: 15px;">
+                                <i class="fas fa-history"></i> Pista de Auditoría
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">Registro de cambios en el sistema (últimos 30 días)</p>
+                            <button class="btn" onclick="downloadAuditTrail()" style="width: 100%;">
+                                <i class="fas fa-download"></i> Descargar Excel
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="background: #f0f7ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 20px; margin-top: 30px;">
+                        <h3 style="color: #0369a1; margin-top: 0;">📊 Información de Reportes</h3>
+                        <ul style="margin: 10px 0; padding-left: 20px;">
+                            <li><strong>Depreciación Detallada:</strong> Detalles de depreciación mensuales por cada activo individual</li>
+                            <li><strong>Resumen de Depreciación:</strong> Datos consolidados agrupados por categoría de activo</li>
+                            <li><strong>Asientos Contables:</strong> Registro de todas las transacciones contables generadas</li>
+                            <li><strong>Movimiento de Activos:</strong> Adiciones de nuevos activos y retiros del período</li>
+                            <li><strong>Reconciliación:</strong> Comparativa entre el valor en sistema vs registros contables</li>
+                            <li><strong>Pista de Auditoría:</strong> Historial de cambios realizados en el sistema</li>
+                        </ul>
                     </div>
                 </div>
             </div>
@@ -762,6 +875,33 @@
         </div>
     </div>
 
+    <div id="importDepartmentsModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeImportDepartmentsModal()">&times;</span>
+            <h2>Importar Departamentos desde Excel</h2>
+            <form id="importDepartmentsForm">
+                <div class="form-group">
+                    <label>Archivo Excel (.xlsx o .xls)</label>
+                    <p style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                        Formato esperado: Columna A=Nombre, Columna B=Descripción
+                    </p>
+                    <input type="file" id="importDepartmentsFile" accept=".xlsx,.xls" required>
+                </div>
+                <div id="importDepartmentsProgress" style="display: none; margin-bottom: 15px;">
+                    <p>Importando...</p>
+                    <div style="width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden;">
+                        <div id="importDepartmentsProgressBar" style="height: 100%; background: #28a745; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+                <div id="importDepartmentsResults" style="display: none; margin-bottom: 15px; padding: 10px; background: #f0f0f0; border-radius: 5px;">
+                    <p id="importDepartmentsResultsText"></p>
+                    <ul id="importDepartmentsErrorsList" style="list-style: none; padding-left: 0; font-size: 12px; color: #d32f2f;"></ul>
+                </div>
+                <button type="submit" class="btn btn-success">Importar</button>
+            </form>
+        </div>
+    </div>
+
     <div id="locationModal" class="modal">
         <div class="modal-content">
             <span class="close-modal" onclick="closeLocationModal()">&times;</span>
@@ -915,8 +1055,35 @@
             <!-- Acciones -->
             <div style="margin-top: 20px; display: flex; gap: 10px;">
                 <button class="btn" onclick="editAssetFromDetails()">Editar</button>
+                <button class="btn" onclick="createAssetJournalEntry()" style="background: #FF9800;">
+                    <i class="fas fa-receipt"></i> Generar Asiento
+                </button>
                 <button class="btn btn-danger" onclick="deleteAssetFromDetails()">Eliminar</button>
                 <button class="btn" style="background: #28a745;" onclick="closeAssetDetailsModal()">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal QR -->
+    <div id="qrModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close-modal" onclick="closeQRModal()">&times;</span>
+            <h2>Código QR del Activo</h2>
+            <div style="border: 1px solid #ddd; padding: 20px; border-radius: 8px; text-align: center;">
+                <p><strong>Código:</strong> <span id="qrAssetCode"></span></p>
+                <p><strong>Descripción:</strong> <span id="qrAssetDesc"></span></p>
+                <div style="margin: 20px 0; padding: 20px; background: #f5f5f5; border-radius: 8px;">
+                    <img id="qrImage" src="" alt="QR Code" style="max-width: 300px; width: 100%;">
+                </div>
+                <p style="font-size: 12px; color: #666;">Escanea este código QR con tu dispositivo móvil para ver los detalles del activo</p>
+                <div style="display: flex; gap: 10px; margin-top: 15px;">
+                    <button class="btn" onclick="printQR()" style="flex: 1; background: #17a2b8;">
+                        <i class="fas fa-print"></i> Imprimir
+                    </button>
+                    <button class="btn btn-success" id="qrDownloadBtn" style="flex: 1;">
+                        <i class="fas fa-download"></i> Descargar
+                    </button>
+                </div>
             </div>
         </div>
     </div>
