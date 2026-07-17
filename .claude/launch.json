@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "flask", "run", "--port", "5001"],
       "port": 5001
+    },
+    {
+      "name": "activos-fijos",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["app.py"],
+      "port": 5002
     }
   ]
 }
