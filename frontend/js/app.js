@@ -71,7 +71,7 @@ async function loadDashboard() {
         }
 
         // Calcular KPIs financieros principales
-        const allAssetsForCalc = allAssets.length > 0 ? allAssets : assets;
+        const allAssetsForCalc = assets.length > 0 ? assets : allAssets;
         const grossValue = allAssetsForCalc.reduce((s, a) => s + parseFloat(a.acquisition_cost), 0);
         const depreciatedValue = allAssetsForCalc.reduce((s, a) => {
             const years = (today - new Date(a.acquisition_date)) / (1000 * 60 * 60 * 24 * 365.25);
