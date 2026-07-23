@@ -1,36 +1,33 @@
 # Dockerfile para Sistema de Gestión de Activos Fijos
-FROM ubuntu:20.04
+# Imagen oficial de Python (Debian slim) con Python moderno.
+# Ubuntu 20.04 traía Python 3.8, incompatible con las dependencias pinneadas
+# (blinker 1.9.0, Flask 3.1.x, etc. requieren Python >= 3.9).
+FROM python:3.12-slim
 
-# Evitar prompts interactivos
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
-# Instalar dependencias del sistema
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
+# Dependencias del sistema:
+# - postgresql-client: cliente psql (útil para debug)
+# - curl: usado por el HEALTHCHECK
+# - netcat-openbsd: usado por entrypoint.sh para esperar a Postgres (nc -z)
+# - build-essential / libpq-dev: fallback por si algún paquete necesita compilar
+RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     curl \
-    wget \
-    git \
+    netcat-openbsd \
     build-essential \
-    libssl-dev \
-    libffi-dev \
-    python3-dev \
-    netcat \
-    gunicorn \
-    supervisor \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Crear directorio de trabajo
 WORKDIR /app
 
-# Copiar archivos de requisitos
+# Copiar e instalar dependencias de Python (gunicorn viene en requirements.txt)
 COPY requirements.txt .
-
-# Instalar dependencias de Python
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
 COPY backend/ ./backend/
@@ -42,25 +39,21 @@ RUN mkdir -p /app/backend/logs \
     && mkdir -p /app/backend/uploads \
     && chmod 755 /app/backend/logs
 
-# Crear usuario no-root para seguridad
+# Usuario no-root para seguridad
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
-# Cambiar a usuario no-root
+# Script de entrada
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
 
-# Exponer puerto
 EXPOSE 5000
-
-# Script de entrada
-COPY docker/entrypoint.sh /
-USER root
-RUN chmod +x /entrypoint.sh
-USER appuser
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "backend.app:app"]
