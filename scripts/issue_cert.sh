@@ -10,13 +10,13 @@
 # IMPORTANTE sobre la validación:
 #
 # Let's Encrypt (HTTP-01) valida el dominio conectándose al PUERTO 80 público de
-# af.aplicacioneard.com. En este servidor ese puerto lo tiene tesoreria-nginx,
+# af.aplicacionesrd.com. En este servidor ese puerto lo tiene tesoreria-nginx,
 # NO el nginx de este stack (que está en 8080/8443). Por eso, para que la
 # validación por webroot funcione, el ACME del dominio debe poder llegar al
 # webroot de ESTE stack. Tienes dos caminos:
 #
 #   OPCIÓN A (webroot, este script por defecto):
-#     Requiere que el tráfico de http://af.aplicacioneard.com/.well-known/
+#     Requiere que el tráfico de http://af.aplicacionesrd.com/.well-known/
 #     acme-challenge/ llegue a este stack (puerto ${HTTP_PORT:-8080}). Si vas a
 #     enrutar el dominio desde tesoreria-nginx hacia este stack, añade allí un
 #     paso que reenvíe /.well-known/acme-challenge/ a http://127.0.0.1:8080.
@@ -28,7 +28,7 @@
 #
 #       docker compose -f docker-compose.prod.yml run --rm --entrypoint certbot \
 #         certbot certonly --manual --preferred-challenges dns \
-#         -d af.aplicacioneard.com --email TU-CORREO --agree-tos --no-eff-email
+#         -d af.aplicacionesrd.com --email TU-CORREO --agree-tos --no-eff-email
 #
 #     Luego corre este script con el argumento "solo-activar" para copiar el
 #     cert emitido al nginx y recargar:  sudo bash scripts/issue_cert.sh --activar
@@ -38,7 +38,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COMPOSE="docker compose -f docker-compose.prod.yml"
-DOMAIN="${DOMAIN:-af.aplicacioneard.com}"
+DOMAIN="${DOMAIN:-af.aplicacionesrd.com}"
 # Cargar DOMAIN desde .env si está definido ahí
 if [[ -f .env ]]; then
     ENV_DOMAIN="$(grep -E '^DOMAIN=' .env | cut -d= -f2- || true)"

@@ -24,7 +24,7 @@ set -euo pipefail
 # ========== CONFIGURACIÓN — AJUSTA SI HACE FALTA ==========
 REPO_URL="https://github.com/verasalmonteasoc-create/sistema-activos-fijos.git"
 APP_DIR="/opt/af-activos-fijos"
-DOMAIN="af.aplicacioneard.com"
+DOMAIN="af.aplicacionesrd.com"
 HTTP_PORT="8080"    # Puerto HTTP del host para el nginx de este stack.
 HTTPS_PORT="8443"   # Puerto HTTPS del host para el nginx de este stack.
                     # Cámbialos si ya están ocupados (revisa con: ss -tlnp).

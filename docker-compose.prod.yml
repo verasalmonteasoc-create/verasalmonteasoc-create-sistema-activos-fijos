@@ -42,8 +42,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?Debes definir DB_PASSWORD en .env}
       SECRET_KEY: ${SECRET_KEY:?Debes definir SECRET_KEY en .env}
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://af.aplicacioneard.com}
-      APP_BASE_URL: ${APP_BASE_URL:-https://af.aplicacioneard.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://af.aplicacionesrd.com}
+      APP_BASE_URL: ${APP_BASE_URL:-https://af.aplicacionesrd.com}
       PYTHONUNBUFFERED: 1
     expose:
       - "5000"
@@ -78,7 +78,7 @@ services:
                echo 'Generando certificado autofirmado inicial...';
                openssl req -x509 -nodes -newkey rsa:2048 -days 3650
                  -keyout /ssl/privkey.pem -out /ssl/fullchain.pem
-                 -subj '/CN=${DOMAIN:-af.aplicacioneard.com}';
+                 -subj '/CN=${DOMAIN:-af.aplicacionesrd.com}';
                echo 'Certificado autofirmado creado.';
              else
                echo 'Ya existe un certificado, no se toca.';
@@ -123,7 +123,7 @@ services:
     command: >
       -c "trap exit TERM;
           while :; do
-            certbot renew --deploy-hook 'cp /etc/letsencrypt/live/${DOMAIN:-af.aplicacioneard.com}/fullchain.pem /ssl/fullchain.pem && cp /etc/letsencrypt/live/${DOMAIN:-af.aplicacioneard.com}/privkey.pem /ssl/privkey.pem';
+            certbot renew --deploy-hook 'cp /etc/letsencrypt/live/${DOMAIN:-af.aplicacionesrd.com}/fullchain.pem /ssl/fullchain.pem && cp /etc/letsencrypt/live/${DOMAIN:-af.aplicacionesrd.com}/privkey.pem /ssl/privkey.pem';
             sleep 12h & wait $${!};
           done"
     networks:
