@@ -122,21 +122,54 @@ for i in $(seq 1 30); do
 done
 
 echo "== 6/6: Configurando nginx para ${DOMAIN} =="
-# Detectar el layout de nginx del servidor:
-#  - Debian/Ubuntu clásico: sites-available + sites-enabled
-#  - nginx oficial / otros: conf.d
-if [[ -d /etc/nginx/sites-available && -d /etc/nginx/sites-enabled ]]; then
-    echo "Layout detectado: sites-available/sites-enabled"
-    cp "deploy/nginx-${DOMAIN}.conf" "/etc/nginx/sites-available/${DOMAIN}.conf"
-    ln -sf "/etc/nginx/sites-available/${DOMAIN}.conf" "/etc/nginx/sites-enabled/${DOMAIN}.conf"
-elif [[ -d /etc/nginx/conf.d ]]; then
-    echo "Layout detectado: conf.d"
-    cp "deploy/nginx-${DOMAIN}.conf" "/etc/nginx/conf.d/${DOMAIN}.conf"
+
+# Ubicar el nginx.conf principal (respeta instalaciones no estándar).
+NGINX_CONF="$(nginx -V 2>&1 | tr ' ' '\n' | sed -n 's/^--conf-path=//p')"
+NGINX_CONF="${NGINX_CONF:-/etc/nginx/nginx.conf}"
+NGINX_ROOT="$(dirname "$NGINX_CONF")"
+echo "nginx.conf principal: ${NGINX_CONF}"
+
+TARGET_DIR=""
+USE_SYMLINK="no"
+
+if [[ -d "${NGINX_ROOT}/sites-available" && -d "${NGINX_ROOT}/sites-enabled" ]]; then
+    # Layout Debian/Ubuntu clásico
+    TARGET_DIR="${NGINX_ROOT}/sites-enabled"
+    USE_SYMLINK="yes"
+elif [[ -d "${NGINX_ROOT}/conf.d" ]]; then
+    TARGET_DIR="${NGINX_ROOT}/conf.d"
+elif [[ -d "${NGINX_ROOT}/http.d" ]]; then
+    # Layout Alpine
+    TARGET_DIR="${NGINX_ROOT}/http.d"
 else
-    echo "⚠ No se encontró ni /etc/nginx/sites-available ni /etc/nginx/conf.d."
-    echo "  Copia manualmente deploy/nginx-${DOMAIN}.conf al include de tu nginx"
-    echo "  y luego corre: sudo nginx -t && sudo systemctl reload nginx"
+    # Fallback: deducir el directorio de include real leyendo la config
+    # efectiva. Busca un "include .../*.conf;" dentro del bloque http.
+    DETECTED="$(nginx -T 2>/dev/null \
+        | grep -oE 'include[[:space:]]+\S+\*(\.conf)?;' \
+        | grep -vE 'mime\.types|modules|fastcgi|scgi|uwsgi|proxy_params' \
+        | head -1 \
+        | sed -E 's/^include[[:space:]]+//; s/;$//; s#/[^/]*\*[^/]*$##')"
+    if [[ -n "${DETECTED}" && -d "${DETECTED}" ]]; then
+        TARGET_DIR="${DETECTED}"
+    fi
+fi
+
+if [[ -z "${TARGET_DIR}" ]]; then
+    echo "⚠ No pude detectar automáticamente el directorio de includes de nginx."
+    echo "  Layout de ${NGINX_ROOT}:"
+    ls -la "${NGINX_ROOT}" || true
+    echo ""
+    echo "  Copia manualmente el server block e inclúyelo donde corresponda:"
+    echo "    sudo cp ${APP_DIR}/deploy/nginx-${DOMAIN}.conf <dir-de-includes>/${DOMAIN}.conf"
+    echo "    sudo nginx -t && sudo systemctl reload nginx"
     exit 1
+fi
+
+echo "Directorio de includes detectado: ${TARGET_DIR}"
+cp "deploy/nginx-${DOMAIN}.conf" "${TARGET_DIR}/${DOMAIN}.conf"
+if [[ "${USE_SYMLINK}" == "yes" ]]; then
+    cp "deploy/nginx-${DOMAIN}.conf" "${NGINX_ROOT}/sites-available/${DOMAIN}.conf"
+    ln -sf "${NGINX_ROOT}/sites-available/${DOMAIN}.conf" "${TARGET_DIR}/${DOMAIN}.conf"
 fi
 nginx -t
 systemctl reload nginx
