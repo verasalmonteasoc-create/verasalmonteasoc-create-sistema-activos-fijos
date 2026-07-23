@@ -2,24 +2,22 @@
 #
 # Instalación / actualización del Sistema de Activos Fijos en un servidor Ubuntu.
 #
+# Stack 100% autocontenido y aislado del resto: Postgres + Flask/Gunicorn +
+# nginx propio + certbot propio, todo en su propia red Docker. NO toca ningún
+# otro contenedor/proyecto del servidor. El nginx de ESTE stack escucha en
+# puertos ALTERNOS del host (8080/8443) para no chocar con el que ya usa 80/443.
+#
 # Qué hace:
-#   1. Instala Docker Engine + plugin de Docker Compose (si no están ya instalados).
+#   1. Instala Docker Engine + Compose plugin (si no están ya instalados).
 #   2. Clona el repo la primera vez, o hace "git pull" en corridas siguientes.
-#   3. Genera un .env de producción la primera vez (SECRET_KEY y password de
-#      BD aleatorios) — en corridas siguientes lo respeta tal cual.
-#   4. Levanta los contenedores propios del proyecto (docker-compose.prod.yml):
-#      Postgres (sin exponer puerto al host) + Flask/Gunicorn (solo en
-#      127.0.0.1:APP_PORT). No toca ningún otro contenedor/proyecto que ya
-#      corra en el servidor.
-#   5. Instala el server block de nginx para af.aplicacioneard.com y hace
-#      "nginx -t" + reload. No genera nada de SSL (eso lo haces tú con
-#      certbot, ver el paso manual al final).
+#   3. Genera un .env de producción la primera vez (SECRET_KEY y password de BD
+#      aleatorios) — en corridas siguientes lo respeta tal cual.
+#   4. Levanta el stack (docker-compose.prod.yml) y verifica que responda.
 #
 # Uso (en el servidor Ubuntu, con sudo):
 #   sudo bash scripts/server_install.sh
 #
-# Es seguro volver a ejecutarlo para desplegar actualizaciones (hace git pull
-# + reconstruye la imagen + reinicia los contenedores).
+# Es seguro volver a ejecutarlo para desplegar actualizaciones.
 
 set -euo pipefail
 
@@ -27,9 +25,9 @@ set -euo pipefail
 REPO_URL="https://github.com/verasalmonteasoc-create/sistema-activos-fijos.git"
 APP_DIR="/opt/af-activos-fijos"
 DOMAIN="af.aplicacioneard.com"
-APP_PORT="8010"   # Puerto local (127.0.0.1) donde el backend queda expuesto.
-                   # Cámbialo aquí y en deploy/nginx-af.aplicacioneard.com.conf
-                   # si ya está en uso por el otro proyecto (revisa con: ss -tlnp).
+HTTP_PORT="8080"    # Puerto HTTP del host para el nginx de este stack.
+HTTPS_PORT="8443"   # Puerto HTTPS del host para el nginx de este stack.
+                    # Cámbialos si ya están ocupados (revisa con: ss -tlnp).
 BRANCH="master"
 # ============================================================
 
@@ -38,11 +36,11 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-echo "== 1/6: Paquetes base (git, curl) =="
+echo "== 1/5: Paquetes base (git, curl) =="
 apt-get update -y
 apt-get install -y git curl ca-certificates gnupg
 
-echo "== 2/6: Docker Engine + Compose plugin =="
+echo "== 2/5: Docker Engine + Compose plugin =="
 if ! command -v docker &> /dev/null; then
     install -m 0755 -d /etc/apt/keyrings
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
@@ -58,7 +56,7 @@ else
     echo "Docker ya está instalado, no se toca (así no afecta al otro proyecto)."
 fi
 
-echo "== 3/6: Código de la aplicación en ${APP_DIR} =="
+echo "== 3/5: Código de la aplicación en ${APP_DIR} =="
 if [[ -d "${APP_DIR}/.git" ]]; then
     echo "Repo ya existe, actualizando (git pull)..."
     git -C "${APP_DIR}" fetch origin
@@ -70,7 +68,7 @@ else
 fi
 cd "${APP_DIR}"
 
-echo "== 4/6: Archivo .env de producción =="
+echo "== 4/5: Archivo .env de producción =="
 if [[ ! -f .env ]]; then
     echo "No existe .env, generando uno nuevo con credenciales aleatorias..."
     SECRET_KEY="$(openssl rand -hex 32)"
@@ -79,8 +77,10 @@ if [[ ! -f .env ]]; then
 FLASK_ENV=production
 DEBUG=False
 
+DOMAIN=${DOMAIN}
 APP_BASE_URL=https://${DOMAIN}
-APP_PORT=${APP_PORT}
+HTTP_PORT=${HTTP_PORT}
+HTTPS_PORT=${HTTPS_PORT}
 
 DB_HOST=postgres
 DB_PORT=5432
@@ -100,96 +100,52 @@ LOG_TO_STDOUT=True
 MAINTENANCE_MODE=False
 EOF
     chmod 600 .env
-    echo "✓ .env creado. Guarda una copia de este archivo en un lugar seguro (contiene la contraseña de la BD)."
+    echo "✓ .env creado. Guarda una copia en un lugar seguro (contiene la contraseña de la BD)."
 else
     echo ".env ya existe, se respeta tal cual (no se sobrescribe)."
 fi
 
-echo "== 5/6: Levantando contenedores (Postgres + Backend) =="
+echo "== 5/5: Levantando el stack (Postgres + Backend + nginx + certbot) =="
 docker compose -f docker-compose.prod.yml up -d --build
 
-echo "Esperando a que el backend responda en 127.0.0.1:${APP_PORT}/health..."
+echo "Esperando a que el sitio responda en https://127.0.0.1:${HTTPS_PORT}/health..."
+OK="no"
 for i in $(seq 1 30); do
-    if curl -fsS "http://127.0.0.1:${APP_PORT}/health" > /dev/null 2>&1; then
-        echo "✓ Backend respondiendo correctamente."
+    if curl -fsSk "https://127.0.0.1:${HTTPS_PORT}/health" > /dev/null 2>&1; then
+        echo "✓ El stack responde correctamente (nginx -> backend)."
+        OK="yes"
         break
     fi
     sleep 2
-    if [[ "$i" -eq 30 ]]; then
-        echo "⚠ El backend no respondió a tiempo. Revisa los logs con:"
-        echo "  docker compose -f ${APP_DIR}/docker-compose.prod.yml logs -f backend"
-    fi
 done
-
-echo "== 6/6: Configurando nginx para ${DOMAIN} =="
-
-# Ubicar el nginx.conf principal (respeta instalaciones no estándar).
-NGINX_CONF="$(nginx -V 2>&1 | tr ' ' '\n' | sed -n 's/^--conf-path=//p')"
-NGINX_CONF="${NGINX_CONF:-/etc/nginx/nginx.conf}"
-NGINX_ROOT="$(dirname "$NGINX_CONF")"
-echo "nginx.conf principal: ${NGINX_CONF}"
-
-TARGET_DIR=""
-USE_SYMLINK="no"
-
-if [[ -d "${NGINX_ROOT}/sites-available" && -d "${NGINX_ROOT}/sites-enabled" ]]; then
-    # Layout Debian/Ubuntu clásico
-    TARGET_DIR="${NGINX_ROOT}/sites-enabled"
-    USE_SYMLINK="yes"
-elif [[ -d "${NGINX_ROOT}/conf.d" ]]; then
-    TARGET_DIR="${NGINX_ROOT}/conf.d"
-elif [[ -d "${NGINX_ROOT}/http.d" ]]; then
-    # Layout Alpine
-    TARGET_DIR="${NGINX_ROOT}/http.d"
-else
-    # Fallback: deducir el directorio de include real leyendo la config
-    # efectiva. Busca un "include .../*.conf;" dentro del bloque http.
-    DETECTED="$(nginx -T 2>/dev/null \
-        | grep -oE 'include[[:space:]]+\S+\*(\.conf)?;' \
-        | grep -vE 'mime\.types|modules|fastcgi|scgi|uwsgi|proxy_params' \
-        | head -1 \
-        | sed -E 's/^include[[:space:]]+//; s/;$//; s#/[^/]*\*[^/]*$##')"
-    if [[ -n "${DETECTED}" && -d "${DETECTED}" ]]; then
-        TARGET_DIR="${DETECTED}"
-    fi
+if [[ "${OK}" != "yes" ]]; then
+    echo "⚠ El stack no respondió a tiempo. Revisa los logs con:"
+    echo "  docker compose -f ${APP_DIR}/docker-compose.prod.yml logs -f"
 fi
-
-if [[ -z "${TARGET_DIR}" ]]; then
-    echo "⚠ No pude detectar automáticamente el directorio de includes de nginx."
-    echo "  Layout de ${NGINX_ROOT}:"
-    ls -la "${NGINX_ROOT}" || true
-    echo ""
-    echo "  Copia manualmente el server block e inclúyelo donde corresponda:"
-    echo "    sudo cp ${APP_DIR}/deploy/nginx-${DOMAIN}.conf <dir-de-includes>/${DOMAIN}.conf"
-    echo "    sudo nginx -t && sudo systemctl reload nginx"
-    exit 1
-fi
-
-echo "Directorio de includes detectado: ${TARGET_DIR}"
-cp "deploy/nginx-${DOMAIN}.conf" "${TARGET_DIR}/${DOMAIN}.conf"
-if [[ "${USE_SYMLINK}" == "yes" ]]; then
-    cp "deploy/nginx-${DOMAIN}.conf" "${NGINX_ROOT}/sites-available/${DOMAIN}.conf"
-    ln -sf "${NGINX_ROOT}/sites-available/${DOMAIN}.conf" "${TARGET_DIR}/${DOMAIN}.conf"
-fi
-nginx -t
-systemctl reload nginx
 
 echo ""
 echo "================================================================"
-echo " ✓ Despliegue completo."
+echo " ✓ Stack desplegado y aislado."
 echo "================================================================"
 echo ""
-echo "PASOS MANUALES (solo la primera vez):"
+echo "Este stack escucha en el host en:"
+echo "   HTTP :  http://127.0.0.1:${HTTP_PORT}   (redirige a HTTPS)"
+echo "   HTTPS:  https://127.0.0.1:${HTTPS_PORT}  (certificado AUTOFIRMADO por ahora)"
 echo ""
-echo "1. Verifica que el DNS de ${DOMAIN} ya apunte a la IP de este servidor:"
-echo "     dig +short ${DOMAIN}"
+echo "PASOS PARA DEJARLO PÚBLICO EN https://${DOMAIN} :"
 echo ""
-echo "2. Emite el certificado SSL con tu certbot ya configurado:"
-echo "     sudo certbot --nginx -d ${DOMAIN}"
+echo "1. El puerto 443 público lo tiene tesoreria-nginx. Como este stack usa"
+echo "   ${HTTPS_PORT}, el tráfico de ${DOMAIN} debe llegar aquí. Elige una:"
+echo "     a) Enrutar ${DOMAIN} desde tu proxy tesoreria-nginx hacia"
+echo "        https://127.0.0.1:${HTTPS_PORT} (o el nombre de red de este nginx)."
+echo "     b) O exponer directamente los puertos ${HTTP_PORT}/${HTTPS_PORT} y"
+echo "        apuntar el DNS/entrada a ellos."
 echo ""
-echo "3. Prueba el sitio:"
-echo "     https://${DOMAIN}"
+echo "2. Emitir el certificado REAL de Let's Encrypt (reemplaza el autofirmado):"
+echo "     sudo bash ${APP_DIR}/scripts/issue_cert.sh tu-correo@dominio.com"
+echo "   (lee ese script: la validación necesita que el ACME del dominio llegue"
+echo "    a este stack, o usar el modo DNS-01 que ahí se explica)."
 echo ""
-echo "Para desplegar actualizaciones futuras, vuelve a correr:"
+echo "Para actualizaciones futuras, vuelve a correr:"
 echo "  sudo bash ${APP_DIR}/scripts/server_install.sh"
 echo "================================================================"

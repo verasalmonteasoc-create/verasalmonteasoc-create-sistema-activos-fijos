@@ -1,6 +1,7 @@
 services:
   # PostgreSQL: solo accesible dentro de la red interna de este proyecto,
-  # no se expone ningún puerto al host (evita chocar con el otro proyecto Docker).
+  # no se expone ningún puerto al host (evita chocar con el otro proyecto Docker
+  # que ya usa el 5432).
   postgres:
     image: postgres:13-alpine
     container_name: af_activos_postgres
@@ -23,8 +24,8 @@ services:
       - af_activos_network
     restart: unless-stopped
 
-  # Flask + Gunicorn: solo escucha en 127.0.0.1 del host, en el puerto APP_PORT.
-  # El nginx del host (fuera de Docker) hace reverse proxy hacia este puerto.
+  # Flask + Gunicorn: NO publica puertos al host. Solo es accesible dentro de la
+  # red interna; el nginx de ESTE stack (af_activos_nginx) lo alcanza por nombre.
   backend:
     build:
       context: .
@@ -44,8 +45,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-https://af.aplicacioneard.com}
       APP_BASE_URL: ${APP_BASE_URL:-https://af.aplicacioneard.com}
       PYTHONUNBUFFERED: 1
-    ports:
-      - "127.0.0.1:${APP_PORT:-8010}:5000"
+    expose:
+      - "5000"
     volumes:
       - ./backend/logs:/app/backend/logs
       - ./uploads:/app/backend/uploads
@@ -62,8 +63,81 @@ services:
     restart: unless-stopped
     command: gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 backend.app:app
 
+  # Init de un solo uso: genera un certificado autofirmado en el volumen de SSL
+  # si todavía no hay ninguno, para que nginx pueda arrancar con TLS de una vez.
+  # Cuando emitas el certificado real de Let's Encrypt, este init no lo pisa
+  # (solo actúa si NO existe fullchain.pem).
+  ssl_init:
+    image: alpine:3.20
+    container_name: af_activos_ssl_init
+    volumes:
+      - af_activos_ssl:/ssl
+    command: >
+      sh -c "apk add --no-cache openssl >/dev/null 2>&1;
+             if [ ! -f /ssl/fullchain.pem ]; then
+               echo 'Generando certificado autofirmado inicial...';
+               openssl req -x509 -nodes -newkey rsa:2048 -days 3650
+                 -keyout /ssl/privkey.pem -out /ssl/fullchain.pem
+                 -subj '/CN=${DOMAIN:-af.aplicacioneard.com}';
+               echo 'Certificado autofirmado creado.';
+             else
+               echo 'Ya existe un certificado, no se toca.';
+             fi"
+    networks:
+      - af_activos_network
+    restart: "no"
+
+  # nginx propio de ESTE stack. Escucha en puertos ALTERNOS del host (8080/8443)
+  # para no chocar con tesoreria-nginx (que tiene 80/443). Termina TLS y hace
+  # proxy hacia el backend.
+  nginx:
+    image: nginx:alpine
+    container_name: af_activos_nginx
+    depends_on:
+      backend:
+        condition: service_healthy
+      ssl_init:
+        condition: service_completed_successfully
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - af_activos_ssl:/etc/nginx/ssl:ro
+      - af_activos_certbot_www:/var/www/certbot
+    networks:
+      - af_activos_network
+    restart: unless-stopped
+
+  # certbot propio para emitir/renovar el certificado de Let's Encrypt.
+  # Por defecto se queda en un loop de renovación (noop si aún no hay cert).
+  # La emisión inicial se hace con: scripts/issue_cert.sh (ver ese archivo).
+  certbot:
+    image: certbot/certbot
+    container_name: af_activos_certbot
+    volumes:
+      - af_activos_letsencrypt:/etc/letsencrypt
+      - af_activos_ssl:/ssl
+      - af_activos_certbot_www:/var/www/certbot
+    entrypoint: /bin/sh
+    command: >
+      -c "trap exit TERM;
+          while :; do
+            certbot renew --deploy-hook 'cp /etc/letsencrypt/live/${DOMAIN:-af.aplicacioneard.com}/fullchain.pem /ssl/fullchain.pem && cp /etc/letsencrypt/live/${DOMAIN:-af.aplicacioneard.com}/privkey.pem /ssl/privkey.pem';
+            sleep 12h & wait $${!};
+          done"
+    networks:
+      - af_activos_network
+    restart: unless-stopped
+
 volumes:
   af_activos_postgres_data:
+    driver: local
+  af_activos_ssl:
+    driver: local
+  af_activos_letsencrypt:
+    driver: local
+  af_activos_certbot_www:
     driver: local
 
 networks:
