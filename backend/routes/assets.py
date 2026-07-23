@@ -620,6 +620,200 @@ def import_assets():
         }), 400
 
 
+@assets_bp.route('/import-auxiliar', methods=['POST'])
+def import_auxiliar():
+    """Importar el Auxiliar de Activos Fijos (formato con depreciación acumulada).
+
+    Formato esperado (encabezados en cualquiera de las primeras filas):
+    MARCA | MODELO | DEPARTAMENTO | COLOR | AÑO | STATUS | CATEGORIA |
+    CLASIFICACION | CHASIS | USUARIO | FECHA DE ADQUISICION | COSTO DE
+    ADQUISICION | DEPRECIACION ACUMULADA | VALOR EN LIBRO
+
+    REEMPLAZA los activos existentes de las categorías presentes en el archivo
+    (el archivo es la fuente de verdad) y registra la depreciación acumulada
+    de cada activo como un DepreciationRecord.
+    """
+    from backend.models import JournalEntry
+
+    if 'file' not in request.files:
+        return jsonify({'success': False, 'message': 'No se proporcionó archivo'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'success': False, 'message': 'Archivo vacío'}), 400
+
+    if not file.filename.lower().endswith(('.xlsx', '.xls')):
+        return jsonify({'success': False, 'message': 'El archivo debe ser Excel (.xlsx o .xls)'}), 400
+
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp:
+            file.save(tmp.name)
+            temp_path = tmp.name
+
+        wb = openpyxl.load_workbook(temp_path, data_only=True)
+        ws = wb.active
+
+        rows = list(ws.iter_rows(values_only=True))
+
+        # Localizar la fila de encabezados (la que contiene MARCA y MODELO)
+        header_idx = None
+        for i, row in enumerate(rows[:10]):
+            cells = [str(c).strip().upper() if c else '' for c in row[:3]]
+            if 'MARCA' in cells:
+                header_idx = i
+                break
+        if header_idx is None:
+            return jsonify({
+                'success': False,
+                'message': 'No se encontró la fila de encabezados (se espera una columna MARCA en las primeras 10 filas)'
+            }), 400
+
+        # ── Fase 1: parsear todo el archivo (si algo falla aquí, no se borra nada)
+        parsed = []
+        errors = []
+        for idx, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
+            try:
+                marca = row[0]
+                modelo = row[1]
+                departamento = row[2]
+                color = row[3]
+                year = row[4]
+                status = row[5]
+                categoria = row[6]
+                chasis = row[8]
+                usuario = row[9]
+                fecha_adq = row[10]
+                costo = row[11]
+                dep_acum = row[12]
+
+                if not costo or not modelo:
+                    continue
+
+                if isinstance(fecha_adq, datetime):
+                    acq_date = fecha_adq.date()
+                elif fecha_adq:
+                    acq_date = datetime.strptime(str(fecha_adq).split(' ')[0], '%Y-%m-%d').date()
+                else:
+                    acq_date = datetime.now().date()
+
+                parsed.append({
+                    'marca': str(marca).strip() if marca else '',
+                    'modelo': str(modelo).strip() if modelo else '',
+                    'departamento': str(departamento).strip() if departamento else None,
+                    'color': str(color).strip() if color else '',
+                    'year': int(year) if year else None,
+                    'status': 'active' if str(status or 'ACTIVO').strip().upper() == 'ACTIVO' else 'inactive',
+                    'categoria': str(categoria).strip() if categoria else 'Vehiculos y Camiones Livianos',
+                    'chasis': str(chasis).strip() if chasis else '',
+                    'usuario': str(usuario).strip() if usuario else '',
+                    'acq_date': acq_date,
+                    'costo': Decimal(str(costo)),
+                    'dep_acum': Decimal(str(dep_acum)) if dep_acum else Decimal('0'),
+                })
+            except Exception as e:
+                errors.append(f'Fila {idx}: {str(e)}')
+
+        if not parsed:
+            return jsonify({
+                'success': False,
+                'message': 'No se encontraron filas válidas para importar',
+                'errors': errors[:10]
+            }), 400
+
+        # ── Fase 2: reemplazar los activos de las categorías del archivo
+        category_names = sorted({p['categoria'] for p in parsed})
+        category_map = {}
+        for name in category_names:
+            cat = AssetCategory.query.filter_by(name=name).first()
+            if not cat:
+                cat = AssetCategory(name=name, depreciation_rate=25,
+                                    description=f'Creada por importación de auxiliar')
+                db.session.add(cat)
+                db.session.flush()
+            category_map[name] = cat
+
+        deleted_count = 0
+        old_ids = [a.id for a in Asset.query.filter(
+            Asset.category_id.in_([c.id for c in category_map.values()])).all()]
+        if old_ids:
+            DepreciationRecord.query.filter(
+                DepreciationRecord.asset_id.in_(old_ids)).delete(synchronize_session=False)
+            JournalEntry.query.filter(
+                JournalEntry.asset_id.in_(old_ids)).update(
+                {JournalEntry.asset_id: None}, synchronize_session=False)
+            deleted_count = Asset.query.filter(
+                Asset.id.in_(old_ids)).delete(synchronize_session=False)
+
+        # ── Fase 3: insertar los activos con su depreciación acumulada
+        total_cost = Decimal('0')
+        total_dep = Decimal('0')
+        for n, p in enumerate(parsed, 1):
+            dept = None
+            if p['departamento']:
+                dept = Department.query.filter_by(name=p['departamento']).first()
+                if not dept:
+                    dept = Department(name=p['departamento'])
+                    db.session.add(dept)
+                    db.session.flush()
+
+            description = f"{p['marca']} {p['modelo']}".strip()
+            asset = Asset(
+                code=f'VEH-{n:03d}',
+                description=description,
+                category_id=category_map[p['categoria']].id,
+                acquisition_cost=p['costo'],
+                acquisition_date=p['acq_date'],
+                useful_life_years=4,
+                brand=p['marca'],
+                model=p['modelo'],
+                color=p['color'],
+                year_manufactured=p['year'],
+                chassis=p['chasis'],
+                asset_user=p['usuario'],
+                status=p['status'],
+            )
+            if dept:
+                asset.department_id = dept.id
+            db.session.add(asset)
+            db.session.flush()
+
+            if p['dep_acum'] > 0:
+                db.session.add(DepreciationRecord(
+                    asset_id=asset.id,
+                    year=p['acq_date'].year,
+                    month=p['acq_date'].month,
+                    depreciation_amount=p['dep_acum'],
+                    accumulated_depreciation=p['dep_acum'],
+                    net_book_value=p['costo'] - p['dep_acum'],
+                    calculated_at=datetime.utcnow(),
+                ))
+
+            total_cost += p['costo']
+            total_dep += p['dep_acum']
+
+        db.session.commit()
+
+        return jsonify({
+            'success': True,
+            'message': f'{len(parsed)} activos importados',
+            'imported_count': len(parsed),
+            'deleted_count': deleted_count,
+            'total_cost': float(total_cost),
+            'total_depreciation': float(total_dep),
+            'total_net': float(total_cost - total_dep),
+            'categories': category_names,
+            'errors': errors[:10] if errors else None
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': f'Error: {str(e)}'}), 400
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+
 @assets_bp.route('/<int:asset_id>/qrcode', methods=['GET'])
 def get_asset_qrcode(asset_id):
     """Generar código QR para un activo"""

@@ -108,6 +108,7 @@
                 <a href="#" data-page="locations" class="nav-link"><i class="fas fa-map-marker-alt"></i> Localidades</a>
                 <a href="#" data-page="assets" class="nav-link"><i class="fas fa-list"></i> Activos</a>
                 <a href="#" data-page="reports" class="nav-link"><i class="fas fa-file-excel"></i> Reportes</a>
+                <a href="#" data-page="config" class="nav-link"><i class="fas fa-cog"></i> Configuración</a>
             </div>
         </aside>
 
@@ -490,6 +491,65 @@
                             <li><strong>Reconciliación:</strong> Comparativa entre el valor en sistema vs registros contables</li>
                             <li><strong>Pista de Auditoría:</strong> Historial de cambios realizados en el sistema</li>
                         </ul>
+                    </div>
+                </div>
+
+                <div id="config-page" class="page">
+                    <h2>Configuración - Carga de Datos</h2>
+                    <p style="color: #666; margin-bottom: 25px;">Sube aquí los archivos Excel que alimentan la aplicación.</p>
+
+                    <!-- Auxiliar de Activos Fijos -->
+                    <div style="background: white; border-left: 4px solid #003D7A; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 25px;">
+                        <h3 style="color: #003D7A; margin-top: 0;">
+                            <i class="fas fa-truck"></i> Auxiliar de Activos Fijos (con Depreciación Acumulada)
+                        </h3>
+                        <p style="font-size: 13px; color: #666;">
+                            Formato esperado (encabezados): <strong>MARCA, MODELO, DEPARTAMENTO, COLOR, AÑO, STATUS,
+                            CATEGORIA, CLASIFICACION, CHASIS, USUARIO, FECHA DE ADQUISICION, COSTO DE ADQUISICION,
+                            DEPRECIACION ACUMULADA, VALOR EN LIBRO</strong>
+                        </p>
+                        <div style="background: #fff7ed; border: 1px solid #f97316; border-radius: 6px; padding: 12px; font-size: 13px; color: #9a3412; margin-bottom: 15px;">
+                            <i class="fas fa-exclamation-triangle"></i> <strong>Importante:</strong> esta importación
+                            <strong>reemplaza</strong> los activos existentes de las categorías incluidas en el archivo.
+                            El archivo es la fuente de verdad.
+                        </div>
+                        <input type="file" id="auxFile" accept=".xlsx,.xls" style="margin-bottom: 15px;">
+                        <br>
+                        <button class="btn" onclick="importAuxiliar()"><i class="fas fa-upload"></i> Importar Auxiliar</button>
+                        <div id="auxProgress" style="display: none; margin-top: 15px; color: #0369a1;">
+                            <i class="fas fa-spinner fa-spin"></i> Importando, por favor espera...
+                        </div>
+                        <div id="auxResult" style="display: none; margin-top: 15px;"></div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 25px;">
+                        <!-- Catálogo de Cuentas -->
+                        <div style="background: white; border-left: 4px solid #10B981; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0;">
+                                <i class="fas fa-book"></i> Catálogo de Cuentas Contables
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                                Columnas: <strong>A=Código, B=Nombre, C=Tipo, D=Descripción</strong>
+                            </p>
+                            <input type="file" id="cfgAccountsFile" accept=".xlsx,.xls" style="margin-bottom: 15px;">
+                            <br>
+                            <button class="btn" onclick="importConfigAccounts()"><i class="fas fa-upload"></i> Importar Cuentas</button>
+                            <div id="cfgAccountsResult" style="display: none; margin-top: 15px;"></div>
+                        </div>
+
+                        <!-- Departamentos -->
+                        <div style="background: white; border-left: 4px solid #8B5CF6; padding: 25px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                            <h3 style="color: #003D7A; margin-top: 0;">
+                                <i class="fas fa-building"></i> Departamentos
+                            </h3>
+                            <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+                                Columnas: <strong>A=Nombre, B=Descripción</strong>
+                            </p>
+                            <input type="file" id="cfgDeptFile" accept=".xlsx,.xls" style="margin-bottom: 15px;">
+                            <br>
+                            <button class="btn" onclick="importConfigDepartments()"><i class="fas fa-upload"></i> Importar Departamentos</button>
+                            <div id="cfgDeptResult" style="display: none; margin-top: 15px;"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1088,6 +1148,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=25"></script>
+    <script src="js/app.js?v=26"></script>
 </body>
 </html>

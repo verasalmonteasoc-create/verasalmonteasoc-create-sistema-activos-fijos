@@ -1951,4 +1951,96 @@ async function createAssetJournalEntry() {
     }
 }
 
+// CONFIGURACIÓN - CARGA DE DATOS
+async function importAuxiliar() {
+    const file = document.getElementById('auxFile').files[0];
+    if (!file) {
+        alert('Por favor selecciona el archivo del auxiliar');
+        return;
+    }
+
+    if (!confirm('Esta importación REEMPLAZA los activos existentes de las categorías incluidas en el archivo.\n\n¿Deseas continuar?')) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const progress = document.getElementById('auxProgress');
+    const result = document.getElementById('auxResult');
+    progress.style.display = 'block';
+    result.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/assets/import-auxiliar', { method: 'POST', body: formData });
+        const data = await res.json();
+        progress.style.display = 'none';
+        result.style.display = 'block';
+
+        if (data.success) {
+            const fmt = n => 'RD$ ' + parseFloat(n).toLocaleString('es-DO', {minimumFractionDigits: 2});
+            result.innerHTML = `
+                <div style="background: #f0fdf4; border: 1px solid #10B981; border-radius: 6px; padding: 15px;">
+                    <strong style="color: #166534;">✓ ${data.imported_count} activos importados</strong>
+                    (${data.deleted_count} anteriores reemplazados)<br>
+                    <table style="margin-top: 10px; font-size: 13px;">
+                        <tr><td style="padding-right: 15px;">Costo de Adquisición:</td><td><strong>${fmt(data.total_cost)}</strong></td></tr>
+                        <tr><td>Depreciación Acumulada:</td><td><strong>${fmt(data.total_depreciation)}</strong></td></tr>
+                        <tr><td>Valor Neto en Libros:</td><td><strong>${fmt(data.total_net)}</strong></td></tr>
+                    </table>
+                    ${data.errors ? `<div style="color: #9a3412; margin-top: 10px;">Advertencias:<br>${data.errors.join('<br>')}</div>` : ''}
+                </div>`;
+            loadDashboard();
+            loadAssets();
+            loadDepartments();
+        } else {
+            result.innerHTML = `<div style="background: #fef2f2; border: 1px solid #dc2626; border-radius: 6px; padding: 15px; color: #991b1b;">
+                ✗ ${data.message}${data.errors ? '<br>' + data.errors.join('<br>') : ''}</div>`;
+        }
+    } catch (error) {
+        progress.style.display = 'none';
+        result.style.display = 'block';
+        result.innerHTML = `<div style="color: #991b1b;">✗ Error: ${error.message}</div>`;
+    }
+}
+
+async function importConfigFile(inputId, resultId, endpoint, entityLabel, refreshFn) {
+    const file = document.getElementById(inputId).files[0];
+    if (!file) {
+        alert('Por favor selecciona un archivo');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const result = document.getElementById(resultId);
+    result.style.display = 'block';
+    result.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importando...';
+
+    try {
+        const res = await fetch(endpoint, { method: 'POST', body: formData });
+        const data = await res.json();
+
+        if (data.success) {
+            const count = data.imported_count ?? data.imported ?? 0;
+            result.innerHTML = `<div style="background: #f0fdf4; border: 1px solid #10B981; border-radius: 6px; padding: 12px; color: #166534;">
+                ✓ ${count} ${entityLabel} importados${data.errors && data.errors.length ? ` (${data.errors.length} advertencias)` : ''}</div>`;
+            if (refreshFn) refreshFn();
+        } else {
+            result.innerHTML = `<div style="background: #fef2f2; border: 1px solid #dc2626; border-radius: 6px; padding: 12px; color: #991b1b;">✗ ${data.message}</div>`;
+        }
+    } catch (error) {
+        result.innerHTML = `<div style="color: #991b1b;">✗ Error: ${error.message}</div>`;
+    }
+}
+
+function importConfigAccounts() {
+    importConfigFile('cfgAccountsFile', 'cfgAccountsResult', '/api/accounting/accounts/import', 'cuentas', loadAccounts);
+}
+
+function importConfigDepartments() {
+    importConfigFile('cfgDeptFile', 'cfgDeptResult', '/api/departments/import', 'departamentos', loadDepartments);
+}
+
 console.log('✓ App script loaded');
