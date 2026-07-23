@@ -13,6 +13,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('assetFilter').addEventListener('change', loadDashboard);
     document.getElementById('departmentFilter').addEventListener('change', loadDashboard);
 
+    // Si se accede vía QR (?asset_id=123), abrir el detalle en modo visualización
+    const urlParams = new URLSearchParams(window.location.search);
+    const qrAssetId = urlParams.get('asset_id');
+    if (qrAssetId) {
+        viewAssetDetails(qrAssetId, true);
+    }
+
     console.log('✓ Aplicación iniciada');
 });
 
@@ -23,7 +30,7 @@ const COLORS = { blue: '#0EA5E9', orange: '#F97316', green: '#10B981' };
 async function loadDashboard() {
     try {
         const [assetsRes, categoriesRes] = await Promise.all([
-            fetch('/api/assets'),
+            fetch('/api/assets?per_page=500'),
             fetch('/api/categories')
         ]);
         const [assetsData, categoriesData] = await Promise.all([assetsRes.json(), categoriesRes.json()]);
@@ -73,10 +80,28 @@ async function loadDashboard() {
         // Calcular KPIs financieros principales
         const allAssetsForCalc = assets.length > 0 ? assets : allAssets;
         const grossValue = allAssetsForCalc.reduce((s, a) => s + parseFloat(a.acquisition_cost), 0);
+
         const depreciatedValue = allAssetsForCalc.reduce((s, a) => {
-            const years = (today - new Date(a.acquisition_date)) / (1000 * 60 * 60 * 24 * 365.25);
-            return s + (parseFloat(a.acquisition_cost) * (a.category.depreciation_rate / 100) * Math.max(0, years));
+            const accumulated = parseFloat(a.accumulated_depreciation);
+            if (accumulated > 0) {
+                return s + accumulated;
+            }
+
+            const acquisitionDate = new Date(a.acquisition_date);
+            const millisecondsSinceAcquisition = today - acquisitionDate;
+            const monthsSinceAcquisition = millisecondsSinceAcquisition / (1000 * 60 * 60 * 24 * 30.44);
+            const usefulLife = parseInt(a.useful_life_years);
+            const acquisitionCost = parseFloat(a.acquisition_cost);
+            const residualPercent = parseFloat(a.residual_value_percent);
+            const residualValue = acquisitionCost * (residualPercent / 100);
+            const depreciableAmount = acquisitionCost - residualValue;
+            const monthsOfUsefulLife = usefulLife * 12;
+            const monthlyDepreciation = depreciableAmount / monthsOfUsefulLife;
+            const calculatedDepreciation = Math.min(monthlyDepreciation * Math.max(0, monthsSinceAcquisition), depreciableAmount);
+
+            return s + calculatedDepreciation;
         }, 0);
+
         const netValue = grossValue - depreciatedValue;
 
         document.getElementById('grossValue').textContent = 'RD$ ' + grossValue.toLocaleString('es-DO', {maximumFractionDigits: 0});
@@ -879,7 +904,7 @@ async function deleteLocation(id) {
 async function loadAssets() {
     try {
         const [assetsRes, categoriesRes, departmentsRes] = await Promise.all([
-            fetch('/api/assets'),
+            fetch('/api/assets?per_page=500'),
             fetch('/api/categories'),
             fetch('/api/departments')
         ]);
@@ -1233,7 +1258,7 @@ async function searchAssets() {
     }
 }
 
-async function viewAssetDetails(assetId) {
+async function viewAssetDetails(assetId, readOnly = false) {
     try {
         const res = await fetch(`/api/assets/${assetId}`);
         const data = await res.json();
@@ -1243,12 +1268,19 @@ async function viewAssetDetails(assetId) {
             return;
         }
 
+        // Modo visualización (acceso vía QR): ocultar acciones de edición
+        const detailActions = document.getElementById('assetDetailsActions');
+        if (detailActions) {
+            detailActions.querySelectorAll('.btn-edit-action, .btn-delete-action, .btn-journal-action')
+                .forEach(btn => btn.style.display = readOnly ? 'none' : '');
+        }
+
         const asset = data.asset;
         const today = new Date();
         const acqDate = new Date(asset.acquisition_date);
         const yearsElapsed = (today - acqDate) / (1000 * 60 * 60 * 24 * 365.25);
-        const accumDepreciation = asset.acquisition_cost * (asset.category.depreciation_rate / 100) * Math.max(0, yearsElapsed);
-        const netValue = asset.acquisition_cost - accumDepreciation;
+        const accumDepreciation = parseFloat(asset.accumulated_depreciation);
+        const netValue = parseFloat(asset.net_book_value);
         const deprecPercent = ((accumDepreciation / asset.acquisition_cost) * 100).toFixed(1);
 
         // Llenar información básica

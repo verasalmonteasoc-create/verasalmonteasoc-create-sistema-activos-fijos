@@ -1,0 +1,68 @@
+services:
+  # PostgreSQL: solo accesible dentro de la red interna de este proyecto,
+  # no se expone ningún puerto al host (evita chocar con el otro proyecto Docker).
+  postgres:
+    image: postgres:13-alpine
+    container_name: af_activos_postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-asset_management}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Debes definir DB_PASSWORD en .env}
+    volumes:
+      - af_activos_postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - af_activos_network
+    restart: unless-stopped
+
+  # Flask + Gunicorn: solo escucha en 127.0.0.1 del host, en el puerto APP_PORT.
+  # El nginx del host (fuera de Docker) hace reverse proxy hacia este puerto.
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: af_activos_backend
+    environment:
+      FLASK_APP: backend/app.py
+      FLASK_ENV: ${FLASK_ENV:-production}
+      DEBUG: ${DEBUG:-False}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-asset_management}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Debes definir DB_PASSWORD en .env}
+      SECRET_KEY: ${SECRET_KEY:?Debes definir SECRET_KEY en .env}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-True}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://af.aplicacioneard.com}
+      APP_BASE_URL: ${APP_BASE_URL:-https://af.aplicacioneard.com}
+      PYTHONUNBUFFERED: 1
+    ports:
+      - "127.0.0.1:${APP_PORT:-8010}:5000"
+    volumes:
+      - ./backend/logs:/app/backend/logs
+      - ./uploads:/app/backend/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - af_activos_network
+    restart: unless-stopped
+    command: gunicorn --bind 0.0.0.0:5000 --workers 4 --timeout 120 backend.app:app
+
+volumes:
+  af_activos_postgres_data:
+    driver: local
+
+networks:
+  af_activos_network:
+    driver: bridge

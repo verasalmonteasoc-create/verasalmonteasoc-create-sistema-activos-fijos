@@ -15,6 +15,20 @@ import tempfile
 assets_bp = Blueprint('assets', __name__, url_prefix='/api/assets')
 
 
+def get_asset_qr_url(asset):
+    """Construir la URL pública que abre el detalle del activo en modo visualización.
+
+    Usa APP_BASE_URL si está configurada (obligatorio en producción, ya que
+    request.host_url puede resolver a una dirección interna detrás de un
+    proxy/balanceador). Si no está configurada, cae de vuelta a la URL de
+    la petición actual (útil en desarrollo local).
+    """
+    base_url = os.environ.get('APP_BASE_URL', '').strip()
+    if not base_url:
+        base_url = request.host_url
+    return f"{base_url.rstrip('/')}/?asset_id={asset.id}"
+
+
 def serialize_asset(asset):
     """Convertir Asset a diccionario JSON"""
     department_name = None
@@ -614,8 +628,8 @@ def get_asset_qrcode(asset_id):
 
         asset = Asset.query.get_or_404(asset_id)
 
-        # Información que contendrá el QR - más compacta
-        qr_data = f"{asset.code}|{asset.description}|{asset.category.name}|RD$ {float(asset.acquisition_cost):,.2f}|{asset.acquisition_date.strftime('%d/%m/%Y')}"
+        # URL que abre el detalle del activo en modo visualización
+        qr_data = get_asset_qr_url(asset)
 
         # Generar QR
         qr = qrcode.QRCode(
@@ -653,7 +667,8 @@ def get_qrcode_data_uri(asset_id):
 
         asset = Asset.query.get_or_404(asset_id)
 
-        qr_data = f"{asset.code}|{asset.description}|{asset.category.name}|RD$ {float(asset.acquisition_cost):,.2f}|{asset.acquisition_date.strftime('%d/%m/%Y')}"
+        # URL que abre el detalle del activo en modo visualización
+        qr_data = get_asset_qr_url(asset)
 
         qr = qrcode.QRCode(
             version=1,

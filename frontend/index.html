@@ -1053,12 +1053,12 @@
             </div>
 
             <!-- Acciones -->
-            <div style="margin-top: 20px; display: flex; gap: 10px;">
-                <button class="btn" onclick="editAssetFromDetails()">Editar</button>
-                <button class="btn" onclick="createAssetJournalEntry()" style="background: #FF9800;">
+            <div id="assetDetailsActions" style="margin-top: 20px; display: flex; gap: 10px;">
+                <button class="btn btn-edit-action" onclick="editAssetFromDetails()">Editar</button>
+                <button class="btn btn-journal-action" onclick="createAssetJournalEntry()" style="background: #FF9800;">
                     <i class="fas fa-receipt"></i> Generar Asiento
                 </button>
-                <button class="btn btn-danger" onclick="deleteAssetFromDetails()">Eliminar</button>
+                <button class="btn btn-danger btn-delete-action" onclick="deleteAssetFromDetails()">Eliminar</button>
                 <button class="btn" style="background: #28a745;" onclick="closeAssetDetailsModal()">Cerrar</button>
             </div>
         </div>
@@ -1088,6 +1088,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=12"></script>
+    <script src="js/app.js?v=25"></script>
 </body>
 </html>
