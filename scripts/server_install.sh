@@ -122,8 +122,22 @@ for i in $(seq 1 30); do
 done
 
 echo "== 6/6: Configurando nginx para ${DOMAIN} =="
-cp "deploy/nginx-${DOMAIN}.conf" "/etc/nginx/sites-available/${DOMAIN}.conf"
-ln -sf "/etc/nginx/sites-available/${DOMAIN}.conf" "/etc/nginx/sites-enabled/${DOMAIN}.conf"
+# Detectar el layout de nginx del servidor:
+#  - Debian/Ubuntu clásico: sites-available + sites-enabled
+#  - nginx oficial / otros: conf.d
+if [[ -d /etc/nginx/sites-available && -d /etc/nginx/sites-enabled ]]; then
+    echo "Layout detectado: sites-available/sites-enabled"
+    cp "deploy/nginx-${DOMAIN}.conf" "/etc/nginx/sites-available/${DOMAIN}.conf"
+    ln -sf "/etc/nginx/sites-available/${DOMAIN}.conf" "/etc/nginx/sites-enabled/${DOMAIN}.conf"
+elif [[ -d /etc/nginx/conf.d ]]; then
+    echo "Layout detectado: conf.d"
+    cp "deploy/nginx-${DOMAIN}.conf" "/etc/nginx/conf.d/${DOMAIN}.conf"
+else
+    echo "⚠ No se encontró ni /etc/nginx/sites-available ni /etc/nginx/conf.d."
+    echo "  Copia manualmente deploy/nginx-${DOMAIN}.conf al include de tu nginx"
+    echo "  y luego corre: sudo nginx -t && sudo systemctl reload nginx"
+    exit 1
+fi
 nginx -t
 systemctl reload nginx
 
