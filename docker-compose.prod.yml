@@ -9,8 +9,11 @@ services:
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Debes definir DB_PASSWORD en .env}
     volumes:
+      # Solo el volumen de datos. NO se montan las migraciones en
+      # /docker-entrypoint-initdb.d: esos ALTER TABLE corren antes de que
+      # existan las tablas (las crea SQLAlchemy con db.create_all() en el
+      # entrypoint del backend) y tumbaban la inicialización de Postgres.
       - af_activos_postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s

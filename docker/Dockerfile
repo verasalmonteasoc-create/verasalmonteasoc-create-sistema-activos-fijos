@@ -32,7 +32,6 @@ RUN pip install --no-cache-dir --upgrade pip \
 # Copiar código de la aplicación
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
-COPY backend/migrations/02_add_asset_fields.sql /docker-entrypoint-initdb.d/
 
 # Crear directorios necesarios
 RUN mkdir -p /app/backend/logs \
