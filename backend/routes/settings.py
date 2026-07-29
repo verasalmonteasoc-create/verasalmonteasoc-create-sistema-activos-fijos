@@ -61,9 +61,16 @@ def update_category_config(category_id):
         cat.default_residual_percent = Decimal(str(data['default_residual_percent']))
     if 'default_useful_life' in data and data['default_useful_life'] not in (None, ''):
         cat.default_useful_life = int(data['default_useful_life'])
-    # Determinación de cuentas explícita
-    for field in ['asset_account', 'accumulated_depreciation_account',
-                  'depreciation_expense_account', 'gain_loss_account']:
+    # Determinación de cuentas explícita — validar que existan en el catálogo
+    from backend.models import ChartOfAccounts
+    acct_fields = ['asset_account', 'accumulated_depreciation_account',
+                   'depreciation_expense_account', 'gain_loss_account']
+    missing = [data[f] for f in acct_fields
+               if data.get(f) and not ChartOfAccounts.query.filter_by(code=data[f]).first()]
+    if missing:
+        return jsonify({'success': False,
+                        'message': f'Estas cuentas no existen en el catálogo: {", ".join(missing)}'}), 400
+    for field in acct_fields:
         if field in data:
             setattr(cat, field, data[field] or None)
 

@@ -458,6 +458,75 @@ def inventory_report(session_id):
 
 
 # ─────────────────────────── REPORTES (Fase 4) ───────────────────────────
+def _xlsx_report(title, headers, rows, filename, totals=None):
+    """Genera un Excel con encabezado de empresa (CompanySettings)."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from backend.models import CompanySettings
+    co = CompanySettings.query.first()
+    wb = Workbook(); ws = wb.active; ws.title = 'Reporte'
+    r = 1
+    if co and (co.legal_name or co.rnc):
+        if co.legal_name:
+            ws.cell(row=r, column=1, value=co.legal_name).font = Font(bold=True, size=13); r += 1
+        if co.rnc:
+            ws.cell(row=r, column=1, value=f'RNC: {co.rnc}'); r += 1
+    ws.cell(row=r, column=1, value=title).font = Font(bold=True, size=12); r += 1
+    ws.cell(row=r, column=1, value=f'Generado: {datetime.utcnow().strftime("%d/%m/%Y")}'); r += 2
+    hf = PatternFill(start_color='003D7A', end_color='003D7A', fill_type='solid')
+    for c, h in enumerate(headers, 1):
+        cell = ws.cell(row=r, column=c, value=h)
+        cell.font = Font(bold=True, color='FFFFFF'); cell.fill = hf
+    r += 1
+    for row in rows:
+        for c, v in enumerate(row, 1):
+            ws.cell(row=r, column=c, value=v)
+        r += 1
+    if totals:
+        for c, v in enumerate(totals, 1):
+            ws.cell(row=r, column=c, value=v).font = Font(bold=True)
+    for i in range(1, len(headers) + 1):
+        ws.column_dimensions[chr(64 + i)].width = 24 if i <= 2 else 16
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    return out.getvalue(), 200, {
+        'Content-Disposition': f'attachment; filename="{filename}.xlsx"',
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}
+
+
+@lifecycle_bp.route('/reports/forecast', methods=['GET'])
+def depreciation_forecast():
+    """Proyección de depreciación futura (estilo SAP: depreciation forecast)."""
+    months = min(int(request.args.get('months', 12)), 60)
+    today = datetime.utcnow().date()
+    y, m = today.year, today.month
+    pending = []
+    for a in Asset.query.filter_by(status='active').all():
+        if not a.useful_life_years:
+            continue
+        cost = Decimal(str(a.acquisition_cost))
+        base = cost - cost * Decimal(str(a.residual_value_percent or 0)) / Decimal('100')
+        rem = base - Decimal(str(a.get_accumulated_depreciation()))
+        if rem <= 0:
+            continue
+        quota = (base / Decimal(a.useful_life_years * 12)).quantize(_CENT, rounding=ROUND_HALF_UP)
+        pending.append([rem, quota])
+    rows = []
+    for _ in range(months):
+        m += 1
+        if m > 12:
+            m = 1; y += 1
+        total = Decimal('0'); n = 0
+        for it in pending:
+            if it[0] <= 0:
+                continue
+            q = min(it[1], it[0]); it[0] -= q; total += q; n += 1
+        rows.append({'period': f'{y}-{m:02d}', 'total': float(total), 'assets': n})
+    if request.args.get('format') == 'xlsx':
+        return _xlsx_report('Proyección de Depreciación', ['Período', 'Depreciación Proyectada', 'Activos'],
+                            [[r['period'], r['total'], r['assets']] for r in rows], 'Proyeccion_Depreciacion')
+    return jsonify({'success': True, 'rows': rows}), 200
+
 @lifecycle_bp.route('/reports/movement', methods=['GET'])
 def movement_report():
     """Movimiento de activos (roll-forward) por categoría en un rango de fechas:
@@ -492,11 +561,17 @@ def movement_report():
         if date_from <= rec_date <= date_to:
             _c(a.category)['depreciation'] += Decimal(str(rec.depreciation_amount))
 
-    rows = [{'category': v['category'], 'additions': float(v['additions']), 'additions_n': v['additions_n'],
-             'retirements': float(v['retirements']), 'retirements_n': v['retirements_n'],
-             'depreciation': float(v['depreciation'])} for v in cats.values()]
+    rows = sorted([{'category': v['category'], 'additions': float(v['additions']), 'additions_n': v['additions_n'],
+                    'retirements': float(v['retirements']), 'retirements_n': v['retirements_n'],
+                    'depreciation': float(v['depreciation'])} for v in cats.values()],
+                  key=lambda r: r['category'])
+    if request.args.get('format') == 'xlsx':
+        return _xlsx_report(f'Movimiento de Activos {date_from} a {date_to}',
+                            ['Categoría', 'Adiciones', '# Altas', 'Bajas', '# Bajas', 'Depreciación'],
+                            [[r['category'], r['additions'], r['additions_n'], r['retirements'],
+                              r['retirements_n'], r['depreciation']] for r in rows], 'Movimiento_Activos')
     return jsonify({'success': True, 'from': date_from.isoformat(), 'to': date_to.isoformat(),
-                    'rows': sorted(rows, key=lambda r: r['category'])}), 200
+                    'rows': rows}), 200
 
 
 @lifecycle_bp.route('/reports/register', methods=['GET'])
@@ -515,6 +590,13 @@ def asset_register():
                      'department': a.department_obj.name if a.department_obj else '-',
                      'acquisition_date': a.acquisition_date.isoformat() if a.acquisition_date else None,
                      'status': a.status, 'cost': float(cost), 'accumulated': float(accum), 'nbv': float(nbv)})
+    if request.args.get('format') == 'xlsx':
+        return _xlsx_report('Libro de Activos Fijos',
+                            ['Código', 'Descripción', 'Categoría', 'Departamento', 'F. Adq.', 'Costo', 'Dep. Acum.', 'Valor en Libros'],
+                            [[r['code'], r['description'], r['category'], r['department'], r['acquisition_date'],
+                              r['cost'], r['accumulated'], r['nbv']] for r in rows],
+                            'Libro_Activos_Fijos',
+                            totals=['TOTAL', '', '', '', '', float(tc), float(ta), float(tn)])
     return jsonify({'success': True, 'rows': rows,
                     'totals': {'cost': float(tc), 'accumulated': float(ta), 'nbv': float(tn), 'count': len(rows)}}), 200
 
@@ -539,5 +621,12 @@ def tax_vs_book():
                      'book_rate': float(book_rate), 'tax_rate': float(tax_rate),
                      'book_annual': float(book_annual), 'tax_annual': float(tax_annual),
                      'difference': float(book_annual - tax_annual)})
+    if request.args.get('format') == 'xlsx':
+        return _xlsx_report('Depreciación Anual: Fiscal vs Contable',
+                            ['Categoría', 'Base', 'Tasa NIIF %', 'Tasa Fiscal %', 'Contable', 'Fiscal', 'Diferencia'],
+                            [[r['category'], r['base'], r['book_rate'], r['tax_rate'],
+                              r['book_annual'], r['tax_annual'], r['difference']] for r in rows],
+                            'Fiscal_vs_Contable',
+                            totals=['TOTAL', '', '', '', float(t_book), float(t_tax), float(t_book - t_tax)])
     return jsonify({'success': True, 'rows': rows,
                     'totals': {'book': float(t_book), 'tax': float(t_tax), 'difference': float(t_book - t_tax)}}), 200

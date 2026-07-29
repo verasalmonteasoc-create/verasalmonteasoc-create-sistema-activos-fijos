@@ -127,6 +127,18 @@ def get_processed_months():
         }), 500
 
 
+@depreciation_bp.route('/monthly-totals', methods=['GET'])
+def monthly_totals():
+    """Total de depreciación por período (para la gráfica de tendencia)."""
+    rows = db.session.query(
+        DepreciationRecord.year, DepreciationRecord.month,
+        db.func.sum(DepreciationRecord.depreciation_amount)
+    ).group_by(DepreciationRecord.year, DepreciationRecord.month
+    ).order_by(DepreciationRecord.year, DepreciationRecord.month).all()
+    return jsonify({'success': True, 'rows': [
+        {'period': f'{y}-{m:02d}', 'total': float(t or 0)} for y, m, t in rows]}), 200
+
+
 @depreciation_bp.route('/process', methods=['POST'])
 def process_monthly_depreciation():
     """Procesar depreciación mensual y generar asiento contable.

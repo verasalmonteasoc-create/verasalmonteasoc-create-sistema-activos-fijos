@@ -136,6 +136,7 @@ function initApp() {
     initNavigation();
     loadDashboard();
     loadDashboardWidgets();
+    loadDashboardExtras();
     loadAccounts();
     loadCategories();
     loadDepartments();
@@ -2594,7 +2595,76 @@ async function loadDashboardWidgets() {
     } catch (e) { /* silencioso */ }
 }
 
+// ---- ALERTAS Y TENDENCIA DEL DASHBOARD ----
+async function loadDashboardExtras() {
+    // Alertas operativas
+    try {
+        const cont = document.getElementById('dashboardAlerts');
+        if (cont) {
+            const chip = (color, bg, icon, text) =>
+                `<span style="background:${bg};color:${color};border:1px solid ${color}33;border-radius:20px;padding:6px 14px;font-size:13px;"><i class="fas ${icon}"></i> ${text}</span>`;
+            const [per, inv, reg] = await Promise.all([
+                fetch('/api/lifecycle/periods').then(r => r.json()),
+                fetch('/api/lifecycle/inventory/sessions').then(r => r.json()),
+                fetch('/api/lifecycle/reports/register').then(r => r.json())
+            ]);
+            let chips = '';
+            if (!(per.periods || []).some(p => p.is_closed))
+                chips += chip('#9a6a12', '#fbf2df', 'fa-lock-open', 'Ningún período contable cerrado aún');
+            const open = (inv.sessions || []).find(s => s.status === 'open');
+            if (open) {
+                const rep = await (await fetch(`/api/lifecycle/inventory/sessions/${open.id}/report`)).json();
+                if (rep.missing_count > 0)
+                    chips += chip('#0369a1', '#eef6ff', 'fa-clipboard-check', `Conteo abierto: ${rep.missing_count} activos por verificar`);
+            }
+            const nearFull = (reg.rows || []).filter(r => r.cost > 0 && r.accumulated / r.cost >= 0.85).length;
+            if (nearFull > 0)
+                chips += chip('#b45309', '#fff7ed', 'fa-hourglass-end', `${nearFull} activos por completar su depreciación`);
+            cont.innerHTML = chips;
+        }
+    } catch (e) { /* silencioso */ }
+
+    // Tendencia de depreciación mensual (últimos 24 períodos)
+    try {
+        if (typeof Chart === 'undefined') return;
+        const d = await (await fetch('/api/depreciation/monthly-totals')).json();
+        const rows = (d.rows || []).slice(-24);
+        const canvas = document.getElementById('depTrendChart');
+        if (!canvas || rows.length === 0) return;
+        document.getElementById('depTrendCard').style.display = 'block';
+        if (dashboardCharts.trend) dashboardCharts.trend.destroy();
+        dashboardCharts.trend = new Chart(canvas, {
+            type: 'line',
+            data: { labels: rows.map(r => r.period),
+                datasets: [{ label: 'Depreciación', data: rows.map(r => r.total),
+                    borderColor: '#0EA5E9', backgroundColor: 'rgba(14,165,233,.12)', fill: true, tension: .3 }] },
+            options: { plugins: { legend: { display: false } },
+                scales: { y: { ticks: { callback: v => 'RD$ ' + (v / 1e6).toFixed(1) + 'M' } } } }
+        });
+    } catch (e) { /* silencioso */ }
+}
+
 // ---- REPORTES DE GESTIÓN ----
+async function reportForecast() {
+    const out = document.getElementById('mgmtReportOutput');
+    out.innerHTML = 'Cargando...';
+    const d = await (await fetch('/api/lifecycle/reports/forecast?months=12')).json();
+    out.innerHTML = `<h4>Proyección de depreciación — próximos 12 meses</h4>
+        <table><thead><tr><th>Período</th><th>Depreciación proyectada</th><th>Activos depreciándose</th></tr></thead><tbody>` +
+        d.rows.map(r => `<tr><td>${r.period}</td><td>${fmtRD(r.total)}</td><td>${r.assets}</td></tr>`).join('') +
+        '</tbody></table>';
+}
+function xlsReport(name) {
+    const y = new Date().getFullYear();
+    const urls = {
+        movement: `/api/lifecycle/reports/movement?format=xlsx&from=${y}-01-01&to=${y}-12-31`,
+        register: '/api/lifecycle/reports/register?format=xlsx',
+        tax: '/api/lifecycle/reports/tax-vs-book?format=xlsx',
+        forecast: '/api/lifecycle/reports/forecast?months=12&format=xlsx'
+    };
+    window.open(urls[name]);
+}
+
 async function reportMovement() {
     const out = document.getElementById('mgmtReportOutput');
     out.innerHTML = 'Cargando...';
