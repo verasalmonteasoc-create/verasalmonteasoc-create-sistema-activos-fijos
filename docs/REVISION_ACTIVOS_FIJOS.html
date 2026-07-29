@@ -1,0 +1,409 @@
+<title>Revisión del Sistema de Activos Fijos — Análisis de brechas vs SAP FI-AA</title>
+<style>
+  :root {
+    --paper: #ffffff;
+    --ground: #f6f7f9;
+    --panel: #ffffff;
+    --ink: #14202b;
+    --ink-soft: #47566a;
+    --ink-faint: #6b7889;
+    --line: #e4e8ee;
+    --line-strong: #d3d9e2;
+    --navy: #0b3d6e;
+    --navy-soft: #eaf1f8;
+    --crit: #b3352b;
+    --crit-bg: #fbecea;
+    --warn: #9a6a12;
+    --warn-bg: #fbf2df;
+    --ok: #2c6e49;
+    --ok-bg: #e8f3ec;
+    --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --serif: Georgia, "Iowan Old Style", "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --shadow: 0 1px 2px rgba(20,32,43,.04), 0 4px 16px rgba(20,32,43,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #10161d; --ground: #0c1116; --panel: #151d26;
+      --ink: #e7edf4; --ink-soft: #a9b6c6; --ink-faint: #7d8b9c;
+      --line: #222d39; --line-strong: #2c3947;
+      --navy: #6fb0ec; --navy-soft: #16283b;
+      --crit: #f08a80; --crit-bg: #2a1815;
+      --warn: #e0b968; --warn-bg: #271f10;
+      --ok: #7ec99b; --ok-bg: #142218;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper:#fff; --ground:#f6f7f9; --panel:#fff; --ink:#14202b; --ink-soft:#47566a; --ink-faint:#6b7889;
+    --line:#e4e8ee; --line-strong:#d3d9e2; --navy:#0b3d6e; --navy-soft:#eaf1f8;
+    --crit:#b3352b; --crit-bg:#fbecea; --warn:#9a6a12; --warn-bg:#fbf2df; --ok:#2c6e49; --ok-bg:#e8f3ec;
+    --shadow:0 1px 2px rgba(20,32,43,.04), 0 4px 16px rgba(20,32,43,.05);
+  }
+  :root[data-theme="dark"] {
+    --paper:#10161d; --ground:#0c1116; --panel:#151d26; --ink:#e7edf4; --ink-soft:#a9b6c6; --ink-faint:#7d8b9c;
+    --line:#222d39; --line-strong:#2c3947; --navy:#6fb0ec; --navy-soft:#16283b;
+    --crit:#f08a80; --crit-bg:#2a1815; --warn:#e0b968; --warn-bg:#271f10; --ok:#7ec99b; --ok-bg:#142218;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--sans);
+    line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 0 22px 90px; }
+
+  /* Header */
+  .masthead { border-bottom: 2px solid var(--ink); margin: 0 0 34px; padding: 46px 0 20px; }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--navy); margin: 0 0 14px; }
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(28px, 5vw, 44px); line-height: 1.1;
+    letter-spacing: -.01em; margin: 0 0 16px; text-wrap: balance; }
+  .lede { font-size: 17px; color: var(--ink-soft); max-width: 62ch; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 26px; margin-top: 22px; font-size: 13px;
+    font-family: var(--mono); color: var(--ink-faint); }
+  .meta b { color: var(--ink-soft); font-weight: 600; }
+
+  h2 { font-family: var(--serif); font-weight: 600; font-size: 25px; letter-spacing: -.01em;
+    margin: 52px 0 6px; padding-top: 20px; border-top: 1px solid var(--line); text-wrap: balance; }
+  h2 .num { font-family: var(--mono); font-size: 14px; color: var(--navy); margin-right: 12px; font-weight: 500; }
+  .sec-intro { color: var(--ink-soft); margin: 0 0 24px; max-width: 64ch; }
+
+  h3 { font-size: 15px; font-weight: 700; margin: 30px 0 12px; letter-spacing: .01em; }
+
+  p { margin: 0 0 14px; }
+  a { color: var(--navy); }
+  code, .mono { font-family: var(--mono); font-size: .88em; }
+  code { background: var(--navy-soft); color: var(--ink); padding: 1px 6px; border-radius: 5px; }
+
+  /* Scorecard */
+  .scorecard { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin: 8px 0 4px; }
+  .mod { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .mod .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .mod .name { font-weight: 600; font-size: 14px; }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; }
+  .tag { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 20px; font-weight: 600; white-space: nowrap; }
+  .t-ok { background: var(--ok-bg); color: var(--ok); }
+  .t-warn { background: var(--warn-bg); color: var(--warn); }
+  .t-crit { background: var(--crit-bg); color: var(--crit); }
+  .f-ok { background: var(--ok); } .f-warn { background: var(--warn); } .f-crit { background: var(--crit); }
+
+  /* Finding cards */
+  .finding { background: var(--panel); border: 1px solid var(--line); border-left-width: 4px;
+    border-radius: 8px; padding: 18px 20px; margin: 14px 0; box-shadow: var(--shadow); }
+  .finding.crit { border-left-color: var(--crit); }
+  .finding.warn { border-left-color: var(--warn); }
+  .finding .fh { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+  .finding .fh .ftitle { font-weight: 700; font-size: 16px; }
+  .finding .fid { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+  .finding p { margin: 8px 0 0; color: var(--ink-soft); font-size: 14.5px; }
+  .finding .fix { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-strong);
+    font-size: 14px; }
+  .finding .fix b { color: var(--ok); }
+
+  /* Tables */
+  .tbl-wrap { overflow-x: auto; margin: 16px 0; border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--panel); }
+  th, td { text-align: left; padding: 11px 15px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { background: var(--navy-soft); color: var(--ink); font-size: 11.5px; letter-spacing: .07em;
+    text-transform: uppercase; font-weight: 700; white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.you { color: var(--ink-soft); }
+  td.sap { color: var(--ink); }
+  .chk { color: var(--ok); font-weight: 700; }
+  .cross { color: var(--crit); font-weight: 700; }
+  .part { color: var(--warn); font-weight: 700; }
+
+  /* Roadmap */
+  .phase { display: grid; grid-template-columns: 120px 1fr; gap: 4px 22px; padding: 20px 0; border-top: 1px solid var(--line); }
+  .phase:first-of-type { border-top: none; }
+  .phase .pn { font-family: var(--mono); font-size: 12px; color: var(--navy); font-weight: 600; letter-spacing: .05em; }
+  .phase .pn .big { display: block; font-family: var(--serif); font-size: 30px; color: var(--ink); font-weight: 600; margin-top: 2px; }
+  .phase h3 { margin: 0 0 4px; font-size: 17px; }
+  .phase .goal { color: var(--ink-faint); font-size: 13px; margin: 0 0 12px; }
+  .phase ul { margin: 0; padding-left: 18px; color: var(--ink-soft); font-size: 14.5px; }
+  .phase li { margin-bottom: 6px; }
+  .phase li b { color: var(--ink); font-weight: 600; }
+
+  ul.clean { list-style: none; padding: 0; margin: 12px 0; }
+  ul.clean li { padding-left: 26px; position: relative; margin-bottom: 10px; color: var(--ink-soft); }
+  ul.clean li::before { content: "▸"; position: absolute; left: 6px; color: var(--navy); font-weight: 700; }
+
+  .callout { background: var(--navy-soft); border: 1px solid var(--line-strong); border-radius: 10px;
+    padding: 18px 22px; margin: 24px 0; }
+  .callout p { margin: 0; color: var(--ink); }
+  .callout .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--navy); font-weight: 700; display: block; margin-bottom: 6px; }
+
+  @media (max-width: 560px) {
+    .phase { grid-template-columns: 1fr; gap: 4px; }
+    .phase .pn .big { display: inline; font-size: 20px; margin-left: 8px; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="kicker">Auditoría funcional · Sistema de Gestión de Activos Fijos</p>
+    <h1>Qué le falta al sistema, a nivel de proceso y configuración</h1>
+    <p class="lede">Revisión del programa contra las prácticas de un módulo de activos fijos empresarial
+      (SAP&nbsp;FI-AA / NIIF): fortalezas actuales, riesgos de correctitud, procesos ausentes y una hoja
+      de ruta priorizada.</p>
+    <div class="meta">
+      <span><b>Alcance:</b> backend Flask + BD + frontend</span>
+      <span><b>Referencia:</b> SAP FI-AA · NIIF</span>
+      <span><b>Estado:</b> en producción</span>
+    </div>
+  </header>
+
+  <!-- 1. Madurez -->
+  <h2><span class="num">01</span>Madurez por módulo</h2>
+  <p class="sec-intro">Una foto rápida de qué tan completo está cada bloque frente a lo que se espera de un
+    sistema de activos fijos formal. <span class="tag t-ok">Sólido</span> ya cumple ·
+    <span class="tag t-warn">Parcial</span> funciona pero con vacíos ·
+    <span class="tag t-crit">Falta</span> no existe el proceso.</p>
+
+  <div class="scorecard">
+    <div class="mod"><div class="top"><span class="name">Maestro de activos</span><span class="tag t-ok">Sólido</span></div><div class="bar"><i class="f-ok" style="width:90%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Categorías + cuentas</span><span class="tag t-warn">Parcial</span></div><div class="bar"><i class="f-warn" style="width:55%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Cálculo de depreciación</span><span class="tag t-warn">Parcial</span></div><div class="bar"><i class="f-warn" style="width:45%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Asientos contables</span><span class="tag t-warn">Parcial</span></div><div class="bar"><i class="f-warn" style="width:50%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Bajas y traslados</span><span class="tag t-crit">Falta</span></div><div class="bar"><i class="f-crit" style="width:8%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Cierre de período</span><span class="tag t-crit">Falta</span></div><div class="bar"><i class="f-crit" style="width:15%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Valoración fiscal vs libro</span><span class="tag t-crit">Falta</span></div><div class="bar"><i class="f-crit" style="width:5%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Conteo físico (QR listo)</span><span class="tag t-crit">Falta</span></div><div class="bar"><i class="f-crit" style="width:20%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Reportes</span><span class="tag t-warn">Parcial</span></div><div class="bar"><i class="f-warn" style="width:55%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Usuarios y seguridad</span><span class="tag t-warn">Parcial</span></div><div class="bar"><i class="f-warn" style="width:50%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Pista de auditoría</span><span class="tag t-warn">Parcial</span></div><div class="bar"><i class="f-warn" style="width:40%"></i></div></div>
+    <div class="mod"><div class="top"><span class="name">Config. de empresa</span><span class="tag t-crit">Falta</span></div><div class="bar"><i class="f-crit" style="width:10%"></i></div></div>
+  </div>
+
+  <div class="callout">
+    <span class="lbl">Lectura de una línea</span>
+    <p>Tienes un <b>registro de activos y una depreciación lineal que ya generan asientos cuadrados</b> — una
+      base real. Lo que falta es el <b>ciclo de vida completo del activo</b> (altas → traslados → bajas → cierre)
+      y la <b>configuración de control</b> que hace confiable y auditable a un sistema tipo SAP.</p>
+  </div>
+
+  <!-- 2. Fortalezas -->
+  <h2><span class="num">02</span>Lo que ya está bien resuelto</h2>
+  <p class="sec-intro">Para no perder de vista la base sobre la que se construye — esto ya funciona y es correcto.</p>
+  <ul class="clean">
+    <li><b>Maestro de activos completo:</b> código, categoría, costo, fecha, vida útil, valor residual, ubicación, departamento, datos técnicos (marca, modelo, chasis) y <b>código QR</b> por activo.</li>
+    <li><b>Categorías con cuentas contables vinculadas</b> (activo, depreciación acumulada, gasto de depreciación) y tasa de depreciación.</li>
+    <li><b>Depreciación lineal mensual</b> que genera <b>un asiento contable agrupado por categoría</b>, con validación de que débito = crédito antes de contabilizar.</li>
+    <li><b>Bloqueo de reproceso</b> del mismo mes de depreciación (evita duplicar el período).</li>
+    <li><b>Importación por Excel</b> del auxiliar, catálogo de cuentas y departamentos.</li>
+    <li><b>Reportes en Excel</b> y <b>login con roles</b> (admin / usuario) recién incorporado.</li>
+  </ul>
+
+  <!-- 3. Hallazgos críticos -->
+  <h2><span class="num">03</span>Hallazgos que corregir primero</h2>
+  <p class="sec-intro">Riesgos de correctitud, integridad de datos y auditoría. Estos afectan la confiabilidad
+    de las cifras y deberían ir antes que cualquier función nueva.</p>
+
+  <div class="finding crit">
+    <div class="fh"><span class="tag t-crit">Crítico</span><span class="ftitle">La depreciación se calcula en el navegador</span><span class="fid">HALL-01</span></div>
+    <p>El endpoint <code>/api/depreciation/process</code> recibe del cliente <code>monthlyDepreciation</code> y
+      <code>newAccumulated</code> y los graba tal cual en la base y en el asiento. El servidor <b>no recalcula
+      ni valida</b> esas cifras. Cualquiera que manipule la petición puede contabilizar montos arbitrarios, y el
+      resultado no es reproducible ni auditable.</p>
+    <div class="fix"><b>Solución →</b> Mover el cálculo 100% al backend: el servidor toma costo, vida útil,
+      valor residual, método y período, y calcula la depreciación de forma determinista. El frontend solo
+      muestra y confirma. Así trabaja SAP (motor de cálculo en el servidor).</div>
+  </div>
+
+  <div class="finding crit">
+    <div class="fh"><span class="tag t-crit">Crítico</span><span class="ftitle">La importación del auxiliar borra y recrea los activos</span><span class="fid">HALL-02</span></div>
+    <p><code>import-auxiliar</code> hace <code>DELETE</code> de todos los activos de la categoría, los vuelve a
+      crear con códigos <code>VEH-001…</code> secuenciales y pone en <code>NULL</code> el <code>asset_id</code>
+      de los asientos existentes. Esto <b>destruye el historial</b>, rompe la trazabilidad contable y cambia los
+      IDs en cada carga. Un sistema de activos <b>nunca borra un activo</b>.</p>
+    <div class="fix"><b>Solución →</b> Importar por <b>upsert</b> usando un identificador estable (el <b>chasis/VIN</b>
+      o un código externo), actualizando el existente y agregando solo los nuevos. Las bajas se registran como
+      proceso de retiro, no como borrado. (SAP: "transferencia de datos heredados" con valores de toma.)</div>
+  </div>
+
+  <div class="finding warn">
+    <div class="fh"><span class="tag t-warn">Importante</span><span class="ftitle">Dos caminos distintos para contabilizar depreciación</span><span class="fid">HALL-03</span></div>
+    <p>Existen <code>/api/depreciation/process</code> y <code>/api/accounting/journal/generate</code>, cada uno
+      genera asientos de depreciación con lógica diferente. Riesgo de <b>doble contabilización</b> del mismo período.</p>
+    <div class="fix"><b>Solución →</b> Dejar un único proceso oficial de cierre de depreciación e inutilizar el otro.</div>
+  </div>
+
+  <div class="finding warn">
+    <div class="fh"><span class="tag t-warn">Importante</span><span class="ftitle">Determinación de cuentas por texto difuso</span><span class="fid">HALL-04</span></div>
+    <p>Al vincular cuentas, el código busca por nombre aproximado (<code>ilike('%Deprec%Acumulada%')</code>).
+      Es frágil: un cambio de nombre o dos cuentas parecidas rompen la contabilización o la mandan a la cuenta equivocada.</p>
+    <div class="fix"><b>Solución →</b> Mapeo <b>explícito</b> de cuentas por clase de activo (determinación de
+      cuentas), configurado una vez y validado, como el "account determination" de SAP.</div>
+  </div>
+
+  <div class="finding warn">
+    <div class="fh"><span class="tag t-warn">Importante</span><span class="ftitle">Contraseña de administrador por defecto y CORS de producción</span><span class="fid">HALL-05</span></div>
+    <p>Se crea <code>admin / Admin123!</code> por defecto — hay que <b>forzar el cambio</b> en el primer ingreso.
+      Además, <code>ProductionConfig</code> lee la variable <code>ALLOWED_HOSTS</code> para CORS, pero el
+      <code>.env</code> define <code>CORS_ORIGINS</code>: la configuración de CORS de producción no toma el valor esperado.</p>
+    <div class="fix"><b>Solución →</b> Obligar cambio de clave inicial; alinear la variable de CORS entre
+      <code>config.py</code> y <code>.env</code>.</div>
+  </div>
+
+  <!-- 4. Procesos faltantes vs SAP -->
+  <h2><span class="num">04</span>Procesos ausentes — tu sistema vs SAP&nbsp;FI-AA</h2>
+  <p class="sec-intro">El ciclo de vida de un activo va mucho más allá de darlo de alta y depreciarlo. Estos son
+    los procesos estándar de un ERP de activos fijos que hoy no existen.</p>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>Proceso</th><th>Tu sistema</th><th>SAP FI-AA (referencia)</th><th>Por qué importa</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Baja / retiro de activos</b><br><span class="mono" style="font-size:12px;color:var(--ink-faint)">venta · desecho</span></td>
+          <td class="you"><span class="cross">✗</span> Solo existe el estado <code>retired</code>, sin proceso</td>
+          <td class="sap"><span class="chk">✓</span> ABAVN / ABAON: calcula ganancia o pérdida y genera el asiento</td>
+          <td>Sin esto, un activo vendido o desechado sigue depreciándose y sumando en el balance.</td>
+        </tr>
+        <tr>
+          <td><b>Traslado de activos</b><br><span class="mono" style="font-size:12px;color:var(--ink-faint)">entre depto / ubicación</span></td>
+          <td class="you"><span class="cross">✗</span> Se puede editar el campo, sin historial ni reclasificación contable</td>
+          <td class="sap"><span class="chk">✓</span> ABUMN: traslado con historial y ajuste de centro de costo</td>
+          <td>Control de dónde está y quién responde por cada activo; base del conteo físico.</td>
+        </tr>
+        <tr>
+          <td><b>Reverso / anulación de asientos</b></td>
+          <td class="you"><span class="cross">✗</span> Los asientos tienen estado pero no se pueden reversar</td>
+          <td class="sap"><span class="chk">✓</span> FB08: documento de reverso que anula sin borrar</td>
+          <td>Corregir un cierre mal hecho sin borrar datos ni descuadrar la contabilidad.</td>
+        </tr>
+        <tr>
+          <td><b>Cierre y bloqueo de período</b></td>
+          <td class="you"><span class="part">◐</span> Solo evita reprocesar el mismo mes de depreciación</td>
+          <td class="sap"><span class="chk">✓</span> Períodos abiertos/cerrados; nada se postea a un período cerrado</td>
+          <td>Garantiza que las cifras de un mes cerrado no cambien después.</td>
+        </tr>
+        <tr>
+          <td><b>Valoración fiscal vs libro</b><br><span class="mono" style="font-size:12px;color:var(--ink-faint)">NIIF vs DGII</span></td>
+          <td class="you"><span class="cross">✗</span> Una sola depreciación para todo</td>
+          <td class="sap"><span class="chk">✓</span> Áreas de valoración paralelas (contable, fiscal, …)</td>
+          <td>La vida útil fiscal (DGII) y la contable (NIIF) casi nunca coinciden.</td>
+        </tr>
+        <tr>
+          <td><b>Métodos de depreciación</b></td>
+          <td class="you"><span class="part">◐</span> Solo línea recta</td>
+          <td class="sap"><span class="chk">✓</span> Lineal, saldos decrecientes, unidades de producción…</td>
+          <td>Distintos activos exigen distintos métodos; la ley fiscal RD usa saldos decrecientes por categoría.</td>
+        </tr>
+        <tr>
+          <td><b>Revaluación / deterioro</b><br><span class="mono" style="font-size:12px;color:var(--ink-faint)">impairment</span></td>
+          <td class="you"><span class="cross">✗</span> No existe</td>
+          <td class="sap"><span class="chk">✓</span> Revaluación y prueba de deterioro con su asiento</td>
+          <td>Requerido por NIIF cuando el valor en libros supera el recuperable.</td>
+        </tr>
+        <tr>
+          <td><b>Conteo físico / inventario</b></td>
+          <td class="you"><span class="part">◐</span> El QR ya existe, pero no hay flujo de verificación</td>
+          <td class="sap"><span class="chk">✓</span> Inventario físico con marcado y reporte de diferencias</td>
+          <td>Ya tienes el QR: escanear → marcar verificado → reporte de faltantes es una gran oportunidad.</td>
+        </tr>
+        <tr>
+          <td><b>Activos en construcción</b><br><span class="mono" style="font-size:12px;color:var(--ink-faint)">AuC / obras en curso</span></td>
+          <td class="you"><span class="cross">✗</span> No existe</td>
+          <td class="sap"><span class="chk">✓</span> Acumula costos y luego capitaliza a activo definitivo</td>
+          <td>Para activos que se construyen o ensamblan antes de entrar en operación.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 5. Configuración faltante -->
+  <h2><span class="num">05</span>Configuración que le falta al sistema</h2>
+  <p class="sec-intro">La diferencia entre "una app que calcula" y "un sistema contable confiable" está en la
+    capa de configuración y control. Hoy casi todo está fijo en el código.</p>
+
+  <ul class="clean">
+    <li><b>Datos de la empresa:</b> razón social, RNC, dirección y logo — para encabezar reportes oficiales. Hoy no existen.</li>
+    <li><b>Año fiscal y períodos contables:</b> definir el ejercicio y qué períodos están abiertos o cerrados.</li>
+    <li><b>Clases de activo (al estilo SAP):</b> cada clase define su rango de numeración, sus cuentas, su método y su vida útil por defecto. Hoy las categorías hacen parte de esto, pero sin numeración controlada (los códigos <code>VEH-001</code> se regeneran y colisionan).</li>
+    <li><b>Método y convención de depreciación por categoría:</b> además de la tasa %, elegir método (lineal / decreciente) y convención de prorrateo (mes completo, medio mes, por días).</li>
+    <li><b>Determinación de cuentas explícita:</b> mapeo directo cuenta ↔ clase, en vez de la búsqueda por texto actual.</li>
+    <li><b>Parámetros del sistema:</b> valor residual por defecto, vida útil por defecto por clase, reglas de redondeo, moneda.</li>
+  </ul>
+
+  <!-- 6. Reportes -->
+  <h2><span class="num">06</span>Reportes que exige una auditoría</h2>
+  <p class="sec-intro">Los reportes actuales cubren depreciación mensual y consolidados. Faltan los que pide
+    específicamente un auditor o la gerencia financiera.</p>
+  <ul class="clean">
+    <li><b>Movimiento / roll-forward de activos fijos:</b> saldo inicial + adiciones − retiros − depreciación = saldo final. Es <b>el</b> cuadro que revisa auditoría. (Hay un botón "Movimiento" en la interfaz pero sin implementación detrás — hay que completarlo.)</li>
+    <li><b>Libro / registro oficial de activos fijos:</b> el listado maestro con costo, depreciación acumulada y valor en libros a una fecha de corte.</li>
+    <li><b>Cédula de depreciación fiscal vs contable:</b> la conciliación entre lo que dice NIIF y lo que acepta la DGII (depende de tener las dos áreas de valoración).</li>
+  </ul>
+
+  <!-- 7. Roadmap -->
+  <h2><span class="num">07</span>Hoja de ruta priorizada</h2>
+  <p class="sec-intro">En qué orden abordarlo para maximizar confiabilidad primero y capacidades después.</p>
+
+  <div class="phase">
+    <div class="pn">FASE<span class="big">1</span></div>
+    <div>
+      <h3>Blindar lo que ya tienes</h3>
+      <p class="goal">Correctitud, integridad y seguridad — antes de cualquier función nueva.</p>
+      <ul>
+        <li><b>Mover el cálculo de depreciación al backend</b> (HALL-01).</li>
+        <li><b>Reescribir la importación como upsert</b> que no borra activos (HALL-02).</li>
+        <li>Unificar el proceso de contabilización de depreciación (HALL-03).</li>
+        <li>Forzar cambio de la contraseña admin inicial y alinear CORS (HALL-05).</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="pn">FASE<span class="big">2</span></div>
+    <div>
+      <h3>Cerrar el ciclo de vida del activo</h3>
+      <p class="goal">Los procesos core que hoy no existen.</p>
+      <ul>
+        <li><b>Baja / retiro</b> con cálculo de ganancia o pérdida y su asiento.</li>
+        <li><b>Traslado</b> entre departamentos/ubicaciones con historial.</li>
+        <li><b>Reverso de asientos</b> (anular sin borrar).</li>
+        <li><b>Cierre y bloqueo de período</b> contable.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="pn">FASE<span class="big">3</span></div>
+    <div>
+      <h3>Configuración tipo SAP</h3>
+      <p class="goal">Convertirlo en un sistema parametrizable y auditable.</p>
+      <ul>
+        <li><b>Datos de empresa</b> y <b>año fiscal / períodos</b>.</li>
+        <li><b>Clases de activo</b> con rangos de numeración y <b>determinación de cuentas</b> explícita.</li>
+        <li><b>Método y convención</b> de depreciación por clase.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="phase">
+    <div class="pn">FASE<span class="big">4</span></div>
+    <div>
+      <h3>NIIF, fiscal y control físico</h3>
+      <p class="goal">Capacidades avanzadas y valor diferencial.</p>
+      <ul>
+        <li><b>Áreas de valoración</b> paralelas: libro (NIIF) vs fiscal (DGII).</li>
+        <li><b>Revaluación / deterioro</b> según NIIF.</li>
+        <li><b>Conteo físico con QR</b> (escanear → verificar → reporte de diferencias).</li>
+        <li><b>Roll-forward</b> y <b>libro oficial</b> de activos fijos.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:34px">
+    <span class="lbl">Recomendación</span>
+    <p>Empezaría por la <b>Fase 1</b> de inmediato: son correcciones acotadas que protegen la confiabilidad de las
+      cifras que ya estás mostrando en producción. La más urgente es <b>HALL-01</b> (cálculo de depreciación en el
+      servidor), porque hoy las cifras contabilizadas dependen de lo que envíe el navegador.</p>
+  </div>
+</div>

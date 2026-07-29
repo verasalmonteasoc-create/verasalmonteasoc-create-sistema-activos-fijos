@@ -263,57 +263,17 @@ def get_journal_entries():
 
 @accounting_bp.route('/journal/generate', methods=['POST'])
 def generate_journal_entries():
-    """Generar asientos contables automáticos para depreciación"""
-    data = request.get_json()
-    year = data.get('year', datetime.now().year)
-    month = data.get('month', datetime.now().month)
-
-    # Obtener todos los activos activos
-    assets = Asset.query.filter_by(status='active').all()
-
-    created_entries = []
-
-    for asset in assets:
-        if asset.is_fully_depreciated():
-            continue
-
-        # Calcular depreciación del mes
-        monthly_depreciation = Decimal(str(asset.get_monthly_depreciation()))
-
-        # Obtener cuentas de la categoría
-        category = asset.category
-        if not category.depreciation_expense_account or not category.accumulated_depreciation_account:
-            continue
-
-        # Buscar cuentas
-        expense_account = ChartOfAccounts.query.filter_by(code=category.depreciation_expense_account).first()
-        accumulated_account = ChartOfAccounts.query.filter_by(code=category.accumulated_depreciation_account).first()
-
-        if not expense_account or not accumulated_account:
-            continue
-
-        # Crear asiento
-        entry = JournalEntry(
-            entry_date=datetime(year, month, 1).date(),
-            description=f'Depreciación: {asset.code} - {asset.description}',
-            debit_account_id=expense_account.id,
-            credit_account_id=accumulated_account.id,
-            amount=monthly_depreciation,
-            asset_id=asset.id,
-            year=year,
-            month=month
-        )
-
-        db.session.add(entry)
-        created_entries.append(entry)
-
-    db.session.commit()
-
+    """DESHABILITADO — había dos caminos distintos para contabilizar la
+    depreciación (este y /api/depreciation/process), lo que podía duplicar el
+    posteo del mismo período. El proceso oficial es /api/depreciation/process,
+    que calcula en el servidor y genera un único asiento por período.
+    """
     return jsonify({
-        'success': True,
-        'message': f'{len(created_entries)} asientos generados',
-        'entries_created': len(created_entries)
-    }), 201
+        'success': False,
+        'message': 'Este endpoint fue deshabilitado. Usa el proceso oficial de '
+                   'Depreciación Mensual (/api/depreciation/process) para evitar '
+                   'doble contabilización.'
+    }), 410
 
 
 @accounting_bp.route('/accounts/import-replace', methods=['POST'])

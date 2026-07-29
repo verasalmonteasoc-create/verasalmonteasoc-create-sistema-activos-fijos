@@ -20,6 +20,7 @@ class User(UserMixin, db.Model):
     last_name = db.Column(db.String(120))
     role = db.Column(db.String(20), default='user')  # 'admin' o 'user'
     active = db.Column(db.Boolean, default=True)
+    must_change_password = db.Column(db.Boolean, default=False)  # forzar cambio en el 1er ingreso
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login = db.Column(db.DateTime)

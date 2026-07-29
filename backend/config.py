@@ -21,8 +21,13 @@ class Config:
     SESSION_COOKIE_SAMESITE = 'Lax'
     PERMANENT_SESSION_LIFETIME = timedelta(days=7)
 
-    # CORS
-    CORS_ORIGINS = ['http://localhost', 'http://localhost:80', 'http://localhost:3000']
+    # CORS — se lee de la variable de entorno CORS_ORIGINS (lista separada por comas)
+    CORS_ORIGINS = [
+        o.strip() for o in os.getenv(
+            'CORS_ORIGINS',
+            'http://localhost,http://localhost:80,http://localhost:3000'
+        ).split(',') if o.strip()
+    ]
 
     # Logging
     LOG_TO_STDOUT = os.getenv('LOG_TO_STDOUT', False)
@@ -47,7 +52,7 @@ class ProductionConfig(Config):
     TESTING = False
     SESSION_COOKIE_SECURE = True
     SQLALCHEMY_ECHO = False
-    CORS_ORIGINS = [os.getenv('ALLOWED_HOSTS', 'http://localhost')]
+    # CORS_ORIGINS se hereda de Config (lee la variable de entorno CORS_ORIGINS)
 
 
 class TestingConfig(Config):

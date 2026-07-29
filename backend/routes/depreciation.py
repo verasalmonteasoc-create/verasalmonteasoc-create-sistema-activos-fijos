@@ -2,11 +2,95 @@
 Rutas de Depreciación Mensual
 """
 from flask import Blueprint, request, jsonify, current_app
+from flask_login import current_user
 from datetime import datetime
-from decimal import Decimal
+from calendar import monthrange
+from decimal import Decimal, ROUND_HALF_UP
 from backend.models import db, Asset, DepreciationRecord, JournalEntry, JournalEntryLine, AssetCategory, ChartOfAccounts
 
 depreciation_bp = Blueprint('depreciation', __name__, url_prefix='/api/depreciation')
+
+_CENT = Decimal('0.01')
+
+
+def compute_period_depreciation(year, month):
+    """Calcula EN EL SERVIDOR la depreciación lineal de todos los activos
+    activos para el período (year, month). Es determinista y auditable: el
+    cliente nunca envía montos, solo el período.
+
+    Fórmula (línea recta):
+        base_depreciable = costo - (costo * % valor residual)
+        cuota_mensual     = base_depreciable / (vida_util_años * 12)
+    Con topes: no se deprecia antes de la fecha de adquisición y la
+    depreciación acumulada nunca supera la base depreciable.
+    """
+    period_end = datetime(int(year), int(month), monthrange(int(year), int(month))[1]).date()
+    details = []
+    total = Decimal('0')
+
+    assets = Asset.query.filter_by(status='active').all()
+    for asset in assets:
+        if not asset.useful_life_years or asset.useful_life_years <= 0:
+            continue
+        # No depreciar activos adquiridos después del cierre del período
+        if asset.acquisition_date and asset.acquisition_date > period_end:
+            continue
+
+        cost = Decimal(str(asset.acquisition_cost))
+        residual_pct = Decimal(str(asset.residual_value_percent or 0))
+        depreciable = (cost - (cost * residual_pct / Decimal('100')))
+        accumulated = Decimal(str(asset.get_accumulated_depreciation()))
+        remaining = depreciable - accumulated
+        if remaining <= 0:
+            continue  # ya totalmente depreciado
+
+        monthly = (depreciable / Decimal(asset.useful_life_years * 12)).quantize(_CENT, rounding=ROUND_HALF_UP)
+        if monthly > remaining:
+            monthly = remaining.quantize(_CENT, rounding=ROUND_HALF_UP)
+        if monthly <= 0:
+            continue
+
+        new_accumulated = accumulated + monthly
+        details.append({
+            'asset_id': asset.id,
+            'code': asset.code,
+            'description': asset.description,
+            'category': asset.category.name if asset.category else '-',
+            'category_id': asset.category_id,
+            'cost': float(cost),
+            'previousAccumulated': float(accumulated),
+            'monthlyDepreciation': float(monthly),
+            'newAccumulated': float(new_accumulated),
+            '_monthly': monthly,
+            '_new_accumulated': new_accumulated,
+        })
+        total += monthly
+
+    return details, total
+
+
+@depreciation_bp.route('/preview', methods=['GET'])
+def preview_depreciation():
+    """Vista previa de la depreciación del período — calculada en el servidor."""
+    year = request.args.get('year', type=int)
+    month = request.args.get('month', type=int)
+    if not year or not month:
+        return jsonify({'success': False, 'message': 'Año y mes requeridos'}), 400
+
+    already = DepreciationRecord.query.filter_by(year=year, month=month).first() is not None
+    details, total = compute_period_depreciation(year, month)
+    # No exponer los objetos Decimal internos
+    clean = [{k: v for k, v in d.items() if not k.startswith('_')} for d in details]
+
+    return jsonify({
+        'success': True,
+        'already_processed': already,
+        'year': year,
+        'month': month,
+        'total_assets': len(clean),
+        'total_depreciation': float(total),
+        'details': clean
+    }), 200
 
 
 @depreciation_bp.route('/months', methods=['GET'])
@@ -45,18 +129,20 @@ def get_processed_months():
 
 @depreciation_bp.route('/process', methods=['POST'])
 def process_monthly_depreciation():
-    """Procesar depreciación mensual y generar asiento contable"""
+    """Procesar depreciación mensual y generar asiento contable.
+
+    El cálculo se hace EN EL SERVIDOR (no se confía en montos del cliente):
+    solo se recibe el período (year, month).
+    """
+    if not current_user.is_authenticated or not current_user.is_admin():
+        return jsonify({'success': False, 'message': 'Solo un administrador puede procesar la depreciación'}), 403
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         year = data.get('year')
         month = data.get('month')
-        details = data.get('details', [])
 
         if not year or not month:
             return jsonify({'success': False, 'message': 'Año y mes requeridos'}), 400
-
-        if not details:
-            return jsonify({'success': False, 'message': 'No hay detalles de depreciación'}), 400
 
         # Verificar si ya existe depreciación para este período
         existing = DepreciationRecord.query.filter(
@@ -70,17 +156,21 @@ def process_monthly_depreciation():
                 'message': f'La depreciación para {month}/{year} ya fue procesada. Intenta con un mes diferente.'
             }), 409
 
+        # Recalcular en el servidor (fuente de verdad)
+        details, total_depreciation = compute_period_depreciation(year, month)
+        if not details:
+            return jsonify({
+                'success': False,
+                'message': 'No hay activos por depreciar en este período.'
+            }), 400
+
         # Agrupar por categoría para generar asientos
         categories_data = {}
-        total_depreciation = Decimal('0')
 
-        # Procesar cada activo
         for detail in details:
             asset_id = detail['asset_id']
-            monthly_depreciation = Decimal(str(detail['monthlyDepreciation']))
-            new_accumulated = Decimal(str(detail['newAccumulated']))
-
-            # Crear registro de depreciación
+            monthly_depreciation = detail['_monthly']
+            new_accumulated = detail['_new_accumulated']
             net_book_value = Decimal(str(detail['cost'])) - new_accumulated
 
             dep_record = DepreciationRecord(
@@ -93,20 +183,15 @@ def process_monthly_depreciation():
             )
             db.session.add(dep_record)
 
-            # Agrupar por categoría
-            asset = Asset.query.get(asset_id)
-            if asset:
-                cat_id = asset.category_id
-                if cat_id not in categories_data:
-                    categories_data[cat_id] = {
-                        'category': asset.category,
-                        'depreciation_amount': Decimal('0'),
-                        'assets': []
-                    }
-                categories_data[cat_id]['depreciation_amount'] += monthly_depreciation
-                categories_data[cat_id]['assets'].append(asset_id)
-
-            total_depreciation += monthly_depreciation
+            cat_id = detail['category_id']
+            if cat_id not in categories_data:
+                categories_data[cat_id] = {
+                    'category': Asset.query.get(asset_id).category,
+                    'depreciation_amount': Decimal('0'),
+                    'assets': []
+                }
+            categories_data[cat_id]['depreciation_amount'] += monthly_depreciation
+            categories_data[cat_id]['assets'].append(asset_id)
 
         db.session.flush()
 
@@ -115,6 +200,8 @@ def process_monthly_depreciation():
             reference=f'DEP-{year}{str(month).zfill(2)}',
             description=f'Depreciación de Activos Fijos - {_get_month_name(month)}/{year}',
             entry_date=datetime.now().date(),
+            year=year,
+            month=month,
             entry_type='depreciation',
             status='posted'
         )

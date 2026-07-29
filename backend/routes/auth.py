@@ -41,7 +41,9 @@ def login():
             'email': user.email,
             'role': user.role,
             'first_name': user.first_name,
-            'last_name': user.last_name
+            'last_name': user.last_name,
+            'is_admin': user.is_admin(),
+            'must_change_password': bool(user.must_change_password)
         }
     }), 200
 
@@ -55,7 +57,8 @@ def logout():
 
 @auth_bp.route('/me', methods=['GET'])
 def get_current_user():
-    """Obtener usuario actual"""
+    """Obtener usuario actual (401 si no hay sesión — el frontend usa esto
+    para decidir si muestra la pantalla de login)"""
     if current_user.is_authenticated:
         return jsonify({
             'success': True,
@@ -66,23 +69,11 @@ def get_current_user():
                 'role': current_user.role,
                 'first_name': current_user.first_name,
                 'last_name': current_user.last_name,
-                'is_admin': current_user.is_admin()
+                'is_admin': current_user.is_admin(),
+                'must_change_password': bool(current_user.must_change_password)
             }
         }), 200
-    else:
-        # Devolver usuario predeterminado si no hay autenticación
-        return jsonify({
-            'success': True,
-            'user': {
-                'id': 1,
-                'username': 'Usuario',
-                'email': 'sistema@activos.local',
-                'role': 'admin',
-                'first_name': 'Usuario',
-                'last_name': 'Sistema',
-                'is_admin': True
-            }
-        }), 200
+    return jsonify({'success': False, 'message': 'No autenticado'}), 401
 
 
 @auth_bp.route('/register', methods=['POST'])
@@ -107,7 +98,8 @@ def register():
         email=data['email'],
         first_name=data.get('first_name', ''),
         last_name=data.get('last_name', ''),
-        role=data.get('role', 'user')
+        role=data.get('role', 'user'),
+        must_change_password=True  # el usuario cambia la clave temporal en su 1er ingreso
     )
     user.set_password(data['password'])
 
@@ -144,6 +136,8 @@ def get_users():
             'email': u.email,
             'role': u.role,
             'active': u.active,
+            'first_name': u.first_name,
+            'last_name': u.last_name,
             'last_login': u.last_login.isoformat() if u.last_login else None
         } for u in users_page.items],
         'pagination': {
@@ -169,6 +163,13 @@ def update_user(user_id):
 
     data = request.get_json()
 
+    # Protección: un admin no puede quitarse su propio rol ni desactivarse
+    if current_user.id == user_id:
+        if data.get('role') and data['role'] != 'admin' and current_user.is_admin():
+            return jsonify({'success': False, 'message': 'No puedes quitarte tu propio rol de administrador'}), 400
+        if data.get('active') is False:
+            return jsonify({'success': False, 'message': 'No puedes desactivar tu propio usuario'}), 400
+
     if 'first_name' in data:
         user.first_name = data['first_name']
     if 'last_name' in data:
@@ -179,6 +180,14 @@ def update_user(user_id):
         user.role = data['role']
     if 'active' in data and current_user.is_admin():
         user.active = data['active']
+    # Cambio de contraseña: el admin puede resetear la de cualquiera;
+    # un usuario solo la suya
+    if data.get('password'):
+        user.set_password(data['password'])
+        if current_user.id == user.id:
+            user.must_change_password = False   # eligió su propia clave
+        else:
+            user.must_change_password = True    # el admin asignó una temporal
 
     db.session.commit()
 

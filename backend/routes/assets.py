@@ -635,6 +635,9 @@ def import_auxiliar():
     """
     from backend.models import JournalEntry
 
+    if not current_user.is_authenticated or not current_user.is_admin():
+        return jsonify({'success': False, 'message': 'Solo un administrador puede importar el auxiliar'}), 403
+
     if 'file' not in request.files:
         return jsonify({'success': False, 'message': 'No se proporcionó archivo'}), 400
 
@@ -721,34 +724,42 @@ def import_auxiliar():
                 'errors': errors[:10]
             }), 400
 
-        # ── Fase 2: reemplazar los activos de las categorías del archivo
+        # ── Fase 2: asegurar categorías y preparar el upsert (NO se borra nada)
         category_names = sorted({p['categoria'] for p in parsed})
         category_map = {}
         for name in category_names:
             cat = AssetCategory.query.filter_by(name=name).first()
             if not cat:
                 cat = AssetCategory(name=name, depreciation_rate=25,
-                                    description=f'Creada por importación de auxiliar')
+                                    description='Creada por importación de auxiliar')
                 db.session.add(cat)
                 db.session.flush()
             category_map[name] = cat
 
-        deleted_count = 0
-        old_ids = [a.id for a in Asset.query.filter(
-            Asset.category_id.in_([c.id for c in category_map.values()])).all()]
-        if old_ids:
-            DepreciationRecord.query.filter(
-                DepreciationRecord.asset_id.in_(old_ids)).delete(synchronize_session=False)
-            JournalEntry.query.filter(
-                JournalEntry.asset_id.in_(old_ids)).update(
-                {JournalEntry.asset_id: None}, synchronize_session=False)
-            deleted_count = Asset.query.filter(
-                Asset.id.in_(old_ids)).delete(synchronize_session=False)
+        cat_ids = [c.id for c in category_map.values()]
 
-        # ── Fase 3: insertar los activos con su depreciación acumulada
+        # Índice de activos existentes por chasis/VIN (clave estable para upsert)
+        existing_by_chassis = {}
+        for a in Asset.query.filter(Asset.category_id.in_(cat_ids)).all():
+            if a.chassis:
+                existing_by_chassis[a.chassis.strip().upper()] = a
+
+        # Secuencia para códigos de activos NUEVOS (a partir del máximo VEH-#### existente)
+        import re
+        max_seq = 0
+        for (code,) in db.session.query(Asset.code).all():
+            m = re.match(r'VEH-(\d+)$', code or '')
+            if m:
+                max_seq = max(max_seq, int(m.group(1)))
+        next_seq = max_seq + 1
+
+        # ── Fase 3: upsert (actualiza el existente por chasis, crea solo los nuevos)
+        created_count = 0
+        updated_count = 0
         total_cost = Decimal('0')
         total_dep = Decimal('0')
-        for n, p in enumerate(parsed, 1):
+
+        for p in parsed:
             dept = None
             if p['departamento']:
                 dept = Department.query.filter_by(name=p['departamento']).first()
@@ -758,24 +769,51 @@ def import_auxiliar():
                     db.session.flush()
 
             description = f"{p['marca']} {p['modelo']}".strip()
-            asset = Asset(
-                code=f'VEH-{n:03d}',
-                description=description,
-                category_id=category_map[p['categoria']].id,
-                acquisition_cost=p['costo'],
-                acquisition_date=p['acq_date'],
-                useful_life_years=4,
-                brand=p['marca'],
-                model=p['modelo'],
-                color=p['color'],
-                year_manufactured=p['year'],
-                chassis=p['chasis'],
-                asset_user=p['usuario'],
-                status=p['status'],
-            )
-            if dept:
-                asset.department_id = dept.id
-            db.session.add(asset)
+            chassis_key = p['chasis'].strip().upper() if p['chasis'] else ''
+            asset = existing_by_chassis.get(chassis_key) if chassis_key else None
+
+            if asset:
+                # Actualizar el activo existente — conserva su ID y sus asientos
+                asset.description = description
+                asset.category_id = category_map[p['categoria']].id
+                asset.acquisition_cost = p['costo']
+                asset.acquisition_date = p['acq_date']
+                asset.brand = p['marca']
+                asset.model = p['modelo']
+                asset.color = p['color']
+                asset.year_manufactured = p['year']
+                asset.asset_user = p['usuario']
+                asset.status = p['status']
+                if dept:
+                    asset.department_id = dept.id
+                # El auxiliar es la fuente de verdad del saldo de depreciación:
+                # se reemplaza SOLO el saldo de apertura de este activo.
+                DepreciationRecord.query.filter_by(asset_id=asset.id).delete(synchronize_session=False)
+                updated_count += 1
+            else:
+                asset = Asset(
+                    code=f'VEH-{next_seq:04d}',
+                    description=description,
+                    category_id=category_map[p['categoria']].id,
+                    acquisition_cost=p['costo'],
+                    acquisition_date=p['acq_date'],
+                    useful_life_years=4,
+                    brand=p['marca'],
+                    model=p['modelo'],
+                    color=p['color'],
+                    year_manufactured=p['year'],
+                    chassis=p['chasis'],
+                    asset_user=p['usuario'],
+                    status=p['status'],
+                )
+                if dept:
+                    asset.department_id = dept.id
+                db.session.add(asset)
+                next_seq += 1
+                created_count += 1
+                if chassis_key:
+                    existing_by_chassis[chassis_key] = asset
+
             db.session.flush()
 
             if p['dep_acum'] > 0:
@@ -794,11 +832,20 @@ def import_auxiliar():
 
         db.session.commit()
 
+        # Activos de estas categorías que NO vinieron en el archivo (posibles bajas)
+        file_chassis = {p['chasis'].strip().upper() for p in parsed if p['chasis']}
+        not_in_file = sum(
+            1 for a in Asset.query.filter(Asset.category_id.in_(cat_ids)).all()
+            if (a.chassis or '').strip().upper() not in file_chassis
+        )
+
         return jsonify({
             'success': True,
-            'message': f'{len(parsed)} activos importados',
-            'imported_count': len(parsed),
-            'deleted_count': deleted_count,
+            'message': f'{created_count} creados, {updated_count} actualizados',
+            'imported_count': created_count + updated_count,
+            'created_count': created_count,
+            'updated_count': updated_count,
+            'not_in_file_count': not_in_file,
             'total_cost': float(total_cost),
             'total_depreciation': float(total_dep),
             'total_net': float(total_cost - total_dep),

@@ -95,6 +95,62 @@
     </style>
 </head>
 <body>
+    <!-- PANTALLA DE LOGIN (se muestra hasta que haya sesión) -->
+    <div id="loginOverlay" style="position: fixed; inset: 0; z-index: 9999; background: linear-gradient(135deg, #003D7A 0%, #0051a8 100%); display: flex; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; padding: 40px; width: 100%; max-width: 400px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); margin: 20px;">
+            <div style="text-align: center; margin-bottom: 30px;">
+                <i class="fas fa-boxes" style="font-size: 48px; color: #003D7A;"></i>
+                <h1 style="color: #003D7A; font-size: 22px; margin-top: 15px;">Sistema de Activos Fijos</h1>
+                <p style="color: #888; font-size: 13px; margin-top: 5px;">Inicia sesión para continuar</p>
+            </div>
+            <form id="loginForm" onsubmit="doLogin(event)">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; font-size: 13px; color: #555; margin-bottom: 5px;">Usuario o Email</label>
+                    <input type="text" id="loginUsername" required autocomplete="username"
+                        style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 13px; color: #555; margin-bottom: 5px;">Contraseña</label>
+                    <input type="password" id="loginPassword" required autocomplete="current-password"
+                        style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div id="loginError" style="display: none; background: #fef2f2; border: 1px solid #dc2626; color: #991b1b; border-radius: 6px; padding: 10px; font-size: 13px; margin-bottom: 15px;"></div>
+                <button type="submit" id="loginBtn"
+                    style="width: 100%; padding: 12px; background: #003D7A; color: white; border: none; border-radius: 6px; font-size: 15px; cursor: pointer;">
+                    <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- CAMBIO DE CONTRASEÑA OBLIGATORIO (primer ingreso / clave temporal) -->
+    <div id="pwdChangeOverlay" style="display: none; position: fixed; inset: 0; z-index: 9998; background: linear-gradient(135deg, #003D7A 0%, #0051a8 100%); align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; padding: 40px; width: 100%; max-width: 420px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); margin: 20px;">
+            <div style="text-align: center; margin-bottom: 24px;">
+                <i class="fas fa-shield-alt" style="font-size: 42px; color: #003D7A;"></i>
+                <h1 style="color: #003D7A; font-size: 20px; margin-top: 12px;">Cambia tu contraseña</h1>
+                <p style="color: #888; font-size: 13px; margin-top: 5px;">Por seguridad, debes establecer una contraseña nueva antes de continuar.</p>
+            </div>
+            <form id="pwdChangeForm" onsubmit="submitPasswordChange(event)">
+                <div style="margin-bottom: 15px;">
+                    <label style="display: block; font-size: 13px; color: #555; margin-bottom: 5px;">Nueva contraseña</label>
+                    <input type="password" id="newPwd1" required minlength="8" autocomplete="new-password"
+                        style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div style="margin-bottom: 18px;">
+                    <label style="display: block; font-size: 13px; color: #555; margin-bottom: 5px;">Confirmar contraseña</label>
+                    <input type="password" id="newPwd2" required minlength="8" autocomplete="new-password"
+                        style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;">
+                </div>
+                <div id="pwdChangeError" style="display: none; background: #fef2f2; border: 1px solid #dc2626; color: #991b1b; border-radius: 6px; padding: 10px; font-size: 13px; margin-bottom: 15px;"></div>
+                <button type="submit" id="pwdChangeBtn"
+                    style="width: 100%; padding: 12px; background: #003D7A; color: white; border: none; border-radius: 6px; font-size: 15px; cursor: pointer;">
+                    <i class="fas fa-check"></i> Guardar y continuar
+                </button>
+            </form>
+        </div>
+    </div>
+
     <div class="container">
         <aside class="sidebar">
             <h2>Activos Fijos</h2>
@@ -108,13 +164,20 @@
                 <a href="#" data-page="locations" class="nav-link"><i class="fas fa-map-marker-alt"></i> Localidades</a>
                 <a href="#" data-page="assets" class="nav-link"><i class="fas fa-list"></i> Activos</a>
                 <a href="#" data-page="reports" class="nav-link"><i class="fas fa-file-excel"></i> Reportes</a>
-                <a href="#" data-page="config" class="nav-link"><i class="fas fa-cog"></i> Configuración</a>
+                <a href="#" data-page="config" class="nav-link admin-only"><i class="fas fa-cog"></i> Configuración</a>
+                <a href="#" data-page="users" class="nav-link admin-only"><i class="fas fa-users"></i> Usuarios</a>
             </div>
         </aside>
 
         <div class="main">
-            <header class="header">
+            <header class="header" style="display: flex; justify-content: space-between; align-items: center;">
                 <h1 id="pageTitle">Dashboard</h1>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span id="currentUserInfo" style="font-size: 13px; color: #555;"></span>
+                    <button class="btn" onclick="doLogout()" style="padding: 8px 14px; font-size: 13px;">
+                        <i class="fas fa-sign-out-alt"></i> Salir
+                    </button>
+                </div>
             </header>
 
             <div class="content">
@@ -552,7 +615,77 @@
                         </div>
                     </div>
                 </div>
+
+                <div id="users-page" class="page">
+                    <h2>Gestión de Usuarios</h2>
+                    <button class="btn" onclick="openUserModal()" style="margin-bottom: 20px;">
+                        <i class="fas fa-user-plus"></i> Nuevo Usuario
+                    </button>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Nombre</th>
+                                <th>Email</th>
+                                <th>Rol</th>
+                                <th>Estado</th>
+                                <th>Último Acceso</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTable">
+                            <tr><td colspan="7">Cargando...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal Nuevo/Editar Usuario -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeUserModal()">&times;</span>
+            <h2 id="userModalTitle">Nuevo Usuario</h2>
+            <form id="userForm" onsubmit="saveUser(event)">
+                <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label>Usuario *</label>
+                    <input type="text" id="userUsername" required>
+                </div>
+                <div class="form-group">
+                    <label>Nombre</label>
+                    <input type="text" id="userFirstName">
+                </div>
+                <div class="form-group">
+                    <label>Apellido</label>
+                    <input type="text" id="userLastName">
+                </div>
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="userEmail" required>
+                </div>
+                <div class="form-group">
+                    <label id="userPasswordLabel">Contraseña *</label>
+                    <input type="password" id="userPassword" autocomplete="new-password">
+                    <small id="userPasswordHint" style="display: none; color: #888;">Déjala vacía para no cambiarla</small>
+                </div>
+                <div class="form-group">
+                    <label>Rol *</label>
+                    <select id="userRole" required>
+                        <option value="user">Usuario</option>
+                        <option value="admin">Administrador</option>
+                    </select>
+                </div>
+                <div class="form-group" id="userActiveGroup" style="display: none;">
+                    <label>Estado</label>
+                    <select id="userActive">
+                        <option value="true">Activo</option>
+                        <option value="false">Inactivo</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn">Guardar</button>
+            </form>
         </div>
     </div>
 
@@ -1148,6 +1281,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=26"></script>
+    <script src="js/app.js?v=28"></script>
 </body>
 </html>

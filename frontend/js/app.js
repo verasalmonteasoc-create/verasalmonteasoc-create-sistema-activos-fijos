@@ -1,5 +1,138 @@
-// Inicialización
-document.addEventListener('DOMContentLoaded', () => {
+// AUTENTICACIÓN E INICIALIZACIÓN
+let currentUser = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            const data = await res.json();
+            currentUser = data.user;
+            hideLoginShowApp();
+            initApp();
+        } else {
+            showLogin();
+        }
+    } catch (e) {
+        showLogin();
+    }
+});
+
+function showLogin() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+}
+
+function hideLoginShowApp() {
+    document.getElementById('loginOverlay').style.display = 'none';
+
+    // Si la clave es temporal / primer ingreso, obligar a cambiarla antes de seguir
+    if (currentUser && currentUser.must_change_password) {
+        document.getElementById('pwdChangeOverlay').style.display = 'flex';
+    }
+
+    // Mostrar info del usuario en el header
+    const info = document.getElementById('currentUserInfo');
+    if (info && currentUser) {
+        const roleLabel = currentUser.role === 'admin' ? 'Administrador' : 'Usuario';
+        const name = currentUser.first_name || currentUser.username;
+        info.innerHTML = `<i class="fas fa-user-circle"></i> ${name} <span style="background: ${currentUser.role === 'admin' ? '#003D7A' : '#6b7280'}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-left: 5px;">${roleLabel}</span>`;
+    }
+
+    // Ocultar opciones solo-admin para usuarios normales
+    if (currentUser && currentUser.role !== 'admin') {
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+    }
+}
+
+async function doLogin(event) {
+    event.preventDefault();
+    const btn = document.getElementById('loginBtn');
+    const errorDiv = document.getElementById('loginError');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verificando...';
+    errorDiv.style.display = 'none';
+
+    try {
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username: document.getElementById('loginUsername').value.trim(),
+                password: document.getElementById('loginPassword').value,
+                remember: true
+            })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            currentUser = data.user;
+            currentUser.is_admin = data.user.role === 'admin';
+            hideLoginShowApp();
+            initApp();
+        } else {
+            errorDiv.textContent = data.message || 'Credenciales incorrectas';
+            errorDiv.style.display = 'block';
+        }
+    } catch (e) {
+        errorDiv.textContent = 'Error de conexión con el servidor';
+        errorDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Iniciar Sesión';
+    }
+}
+
+async function doLogout() {
+    try {
+        await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) { /* ignorar */ }
+    window.location.reload();
+}
+
+async function submitPasswordChange(event) {
+    event.preventDefault();
+    const p1 = document.getElementById('newPwd1').value;
+    const p2 = document.getElementById('newPwd2').value;
+    const errorDiv = document.getElementById('pwdChangeError');
+    const btn = document.getElementById('pwdChangeBtn');
+    errorDiv.style.display = 'none';
+
+    if (p1 !== p2) {
+        errorDiv.textContent = 'Las contraseñas no coinciden.';
+        errorDiv.style.display = 'block';
+        return;
+    }
+    if (p1.length < 8) {
+        errorDiv.textContent = 'La contraseña debe tener al menos 8 caracteres.';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+    try {
+        const res = await fetch(`/api/auth/users/${currentUser.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: p1 })
+        });
+        const data = await res.json();
+        if (data.success) {
+            currentUser.must_change_password = false;
+            document.getElementById('pwdChangeOverlay').style.display = 'none';
+        } else {
+            errorDiv.textContent = data.message || 'No se pudo cambiar la contraseña.';
+            errorDiv.style.display = 'block';
+        }
+    } catch (e) {
+        errorDiv.textContent = 'Error de conexión.';
+        errorDiv.style.display = 'block';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-check"></i> Guardar y continuar';
+    }
+}
+
+function initApp() {
     initNavigation();
     loadDashboard();
     loadAccounts();
@@ -21,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     console.log('✓ Aplicación iniciada');
-});
+}
 
 // DASHBOARD FINANCIERO
 let dashboardCharts = {};
@@ -236,6 +369,7 @@ function initNavigation() {
             if (page === 'departments') loadDepartments();
             if (page === 'locations') loadLocations();
             if (page === 'assets') loadAssets();
+            if (page === 'users') loadUsers();
         });
     });
 }
@@ -1557,53 +1691,33 @@ async function calculateDepreciation() {
         }
 
         const [year, month] = monthInput.split('-');
-        const startDate = new Date(`${year}-${month}-01`);
-        const endDate = new Date(year, parseInt(month), 0);
 
-        const assetsRes = await fetch('/api/assets');
-        const assetsData = await assetsRes.json();
+        // El cálculo lo hace el SERVIDOR (fuente de verdad). El cliente solo pide el período.
+        const res = await fetch(`/api/depreciation/preview?year=${parseInt(year)}&month=${parseInt(month)}`);
+        const data = await res.json();
 
-        if (!assetsData.success) {
-            alert('Error al cargar activos');
+        if (!data.success) {
+            alert('Error: ' + (data.message || 'no se pudo calcular la depreciación'));
             return;
         }
 
-        const activeAssets = assetsData.assets.filter(a => a.status === 'active');
-
-        if (activeAssets.length === 0) {
-            alert('No hay activos activos para depreciar');
-            return;
+        if (data.already_processed) {
+            alert('⚠ La depreciación de este período ya fue procesada. Se muestra solo como referencia; no se puede volver a contabilizar.');
         }
 
-        // Calcular depreciación
-        let totalDepreciation = 0;
-        const details = [];
-
-        activeAssets.forEach(asset => {
-            if (!asset.useful_life_years || asset.useful_life_years === 0) return;
-
-            const monthlyDepreciation = (asset.acquisition_cost / (asset.useful_life_years * 12));
-            totalDepreciation += monthlyDepreciation;
-
-            details.push({
-                asset_id: asset.id,
-                code: asset.code,
-                description: asset.description,
-                category: asset.category?.name || '-',
-                cost: asset.acquisition_cost,
-                monthlyDepreciation: monthlyDepreciation,
-                previousAccumulated: asset.accumulated_depreciation || 0,
-                newAccumulated: (asset.accumulated_depreciation || 0) + monthlyDepreciation
-            });
-        });
+        if (!data.details || data.details.length === 0) {
+            alert('No hay activos por depreciar en este período.');
+            return;
+        }
 
         depreciationData = {
-            year: parseInt(year),
-            month: parseInt(month),
+            year: data.year,
+            month: data.month,
+            alreadyProcessed: data.already_processed,
             monthStr: new Date(`${year}-${month}-01`).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
-            totalAssets: details.length,
-            totalDepreciation: totalDepreciation,
-            details: details
+            totalAssets: data.total_assets,
+            totalDepreciation: data.total_depreciation,
+            details: data.details
         };
 
         displayDepreciationPreview();
@@ -1654,13 +1768,13 @@ async function processMonthlyDepreciation() {
         btn.disabled = true;
         btn.textContent = 'Procesando...';
 
+        // El servidor recalcula: solo se envía el período (no montos del cliente)
         const response = await fetch('/api/depreciation/process', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 year: depreciationData.year,
-                month: depreciationData.month,
-                details: depreciationData.details
+                month: depreciationData.month
             })
         });
 
@@ -1979,15 +2093,19 @@ async function importAuxiliar() {
 
         if (data.success) {
             const fmt = n => 'RD$ ' + parseFloat(n).toLocaleString('es-DO', {minimumFractionDigits: 2});
+            const notInFile = data.not_in_file_count
+                ? `<div style="color: #9a6a12; margin-top: 8px; font-size: 13px;">
+                     <i class="fas fa-info-circle"></i> ${data.not_in_file_count} activo(s) del sistema no venían en el archivo (posibles bajas) — no se tocaron.
+                   </div>` : '';
             result.innerHTML = `
                 <div style="background: #f0fdf4; border: 1px solid #10B981; border-radius: 6px; padding: 15px;">
-                    <strong style="color: #166534;">✓ ${data.imported_count} activos importados</strong>
-                    (${data.deleted_count} anteriores reemplazados)<br>
+                    <strong style="color: #166534;">✓ ${data.created_count} creados · ${data.updated_count} actualizados</strong><br>
                     <table style="margin-top: 10px; font-size: 13px;">
                         <tr><td style="padding-right: 15px;">Costo de Adquisición:</td><td><strong>${fmt(data.total_cost)}</strong></td></tr>
                         <tr><td>Depreciación Acumulada:</td><td><strong>${fmt(data.total_depreciation)}</strong></td></tr>
                         <tr><td>Valor Neto en Libros:</td><td><strong>${fmt(data.total_net)}</strong></td></tr>
                     </table>
+                    ${notInFile}
                     ${data.errors ? `<div style="color: #9a3412; margin-top: 10px;">Advertencias:<br>${data.errors.join('<br>')}</div>` : ''}
                 </div>`;
             loadDashboard();
@@ -2041,6 +2159,132 @@ function importConfigAccounts() {
 
 function importConfigDepartments() {
     importConfigFile('cfgDeptFile', 'cfgDeptResult', '/api/departments/import', 'departamentos', loadDepartments);
+}
+
+// GESTIÓN DE USUARIOS (solo admin)
+async function loadUsers() {
+    try {
+        const res = await fetch('/api/auth/users?per_page=100');
+        const data = await res.json();
+        const tbody = document.getElementById('usersTable');
+
+        if (data.success && data.users.length > 0) {
+            tbody.innerHTML = data.users.map(u => {
+                const roleBadge = u.role === 'admin'
+                    ? '<span style="background: #003D7A; color: white; padding: 3px 10px; border-radius: 10px; font-size: 12px;">Administrador</span>'
+                    : '<span style="background: #6b7280; color: white; padding: 3px 10px; border-radius: 10px; font-size: 12px;">Usuario</span>';
+                const statusBadge = u.active
+                    ? '<span style="color: #166534;">● Activo</span>'
+                    : '<span style="color: #991b1b;">● Inactivo</span>';
+                const lastLogin = u.last_login
+                    ? new Date(u.last_login).toLocaleString('es-DO')
+                    : 'Nunca';
+                const fullName = `${u.first_name || ''} ${u.last_name || ''}`.trim() || '-';
+                return `
+                    <tr>
+                        <td><strong>${u.username}</strong></td>
+                        <td>${fullName}</td>
+                        <td>${u.email}</td>
+                        <td>${roleBadge}</td>
+                        <td>${statusBadge}</td>
+                        <td>${lastLogin}</td>
+                        <td>
+                            <button class="btn" onclick='openEditUserModal(${JSON.stringify(u)})'>Editar</button>
+                        </td>
+                    </tr>`;
+            }).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="7">No hay usuarios</td></tr>';
+        }
+    } catch (error) {
+        console.error('Error cargando usuarios:', error);
+    }
+}
+
+function openUserModal() {
+    document.getElementById('userModalTitle').textContent = 'Nuevo Usuario';
+    document.getElementById('userForm').reset();
+    document.getElementById('userId').value = '';
+    document.getElementById('userUsername').disabled = false;
+    document.getElementById('userPassword').required = true;
+    document.getElementById('userPasswordLabel').textContent = 'Contraseña *';
+    document.getElementById('userPasswordHint').style.display = 'none';
+    document.getElementById('userActiveGroup').style.display = 'none';
+    document.getElementById('userModal').classList.add('active');
+}
+
+function openEditUserModal(u) {
+    document.getElementById('userModalTitle').textContent = `Editar Usuario: ${u.username}`;
+    document.getElementById('userForm').reset();
+    document.getElementById('userId').value = u.id;
+    document.getElementById('userUsername').value = u.username;
+    document.getElementById('userUsername').disabled = true;
+    document.getElementById('userFirstName').value = u.first_name || '';
+    document.getElementById('userLastName').value = u.last_name || '';
+    document.getElementById('userEmail').value = u.email;
+    document.getElementById('userRole').value = u.role;
+    document.getElementById('userActive').value = String(u.active);
+    document.getElementById('userPassword').required = false;
+    document.getElementById('userPasswordLabel').textContent = 'Nueva Contraseña (opcional)';
+    document.getElementById('userPasswordHint').style.display = 'block';
+    document.getElementById('userActiveGroup').style.display = 'block';
+    document.getElementById('userModal').classList.add('active');
+}
+
+function closeUserModal() {
+    document.getElementById('userModal').classList.remove('active');
+}
+
+async function saveUser(event) {
+    event.preventDefault();
+    const userId = document.getElementById('userId').value;
+    const password = document.getElementById('userPassword').value;
+
+    try {
+        let res;
+        if (userId) {
+            // Editar usuario existente
+            const payload = {
+                first_name: document.getElementById('userFirstName').value,
+                last_name: document.getElementById('userLastName').value,
+                email: document.getElementById('userEmail').value,
+                role: document.getElementById('userRole').value,
+                active: document.getElementById('userActive').value === 'true'
+            };
+            if (password) payload.password = password;
+
+            res = await fetch(`/api/auth/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            // Crear usuario nuevo
+            res = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: document.getElementById('userUsername').value.trim(),
+                    first_name: document.getElementById('userFirstName').value,
+                    last_name: document.getElementById('userLastName').value,
+                    email: document.getElementById('userEmail').value.trim(),
+                    password: password,
+                    role: document.getElementById('userRole').value
+                })
+            });
+        }
+
+        const data = await res.json();
+        if (data.success) {
+            closeUserModal();
+            loadUsers();
+            alert(userId ? '✓ Usuario actualizado' : '✓ Usuario creado exitosamente');
+        } else {
+            alert('Error: ' + data.message);
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
 }
 
 console.log('✓ App script loaded');
