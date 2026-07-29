@@ -55,6 +55,13 @@ class AssetCategory(db.Model):
     asset_account_name = db.Column(db.String(255))  # Nombre de cuenta de activo
     accumulated_depreciation_account = db.Column(db.String(50))  # Cuenta de depreciación acumulada
     depreciation_expense_account = db.Column(db.String(50))  # Cuenta de gasto de depreciación
+    # Configuración de depreciación (Fase 3)
+    depreciation_method = db.Column(db.String(30), default='linea_recta')  # linea_recta | saldos_decrecientes
+    tax_depreciation_rate = db.Column(db.Numeric(5, 2))  # Tasa fiscal DGII (para cédula fiscal vs contable)
+    default_residual_percent = db.Column(db.Numeric(5, 2), default=10)
+    default_useful_life = db.Column(db.Integer)
+    # Cuenta de contrapartida para ganancia/pérdida en ventas y bajas
+    gain_loss_account = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -149,6 +156,16 @@ class Asset(db.Model):
     # Campos de estado y ubicación
     physical_location = db.Column(db.String(255))  # Ubicación física actual
     asset_condition = db.Column(db.String(50), default='good')  # Estado: good, fair, poor, retired
+
+    # Baja / retiro (Fase 2)
+    disposal_date = db.Column(db.Date)
+    disposal_amount = db.Column(db.Numeric(12, 2))       # valor recibido en la venta (0 si desecho)
+    disposal_reason = db.Column(db.String(255))          # venta, desecho, pérdida, etc.
+    disposal_gain_loss = db.Column(db.Numeric(12, 2))    # + ganancia / - pérdida
+
+    # Conteo físico / verificación con QR (Fase 4)
+    last_verified_at = db.Column(db.DateTime)
+    last_verified_session_id = db.Column(db.Integer, db.ForeignKey('inventory_sessions.id'))
 
     # Auditoría
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
@@ -293,10 +310,13 @@ class JournalEntry(db.Model):
     asset_id = db.Column(db.Integer, db.ForeignKey('assets.id'))
     year = db.Column(db.Integer, nullable=False, index=True)
     month = db.Column(db.Integer, nullable=False, index=True)
-    entry_type = db.Column(db.String(50), default='general')  # 'general', 'depreciation', 'adjustment'
-    status = db.Column(db.String(20), default='draft')  # 'draft', 'posted', 'cancelled'
+    entry_type = db.Column(db.String(50), default='general')  # general, depreciation, asset_purchase, disposal, revaluation, reversal
+    status = db.Column(db.String(20), default='draft')  # 'draft', 'posted', 'cancelled', 'reversed'
     total_debit = db.Column(db.Numeric(12, 2), default=0)
     total_credit = db.Column(db.Numeric(12, 2), default=0)
+    # Reverso de asientos (Fase 2)
+    is_reversed = db.Column(db.Boolean, default=False)   # este asiento fue anulado
+    reversal_of_id = db.Column(db.Integer)               # si este asiento ES el reverso de otro
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     debit_account = db.relationship('ChartOfAccounts', foreign_keys=[debit_account_id])
@@ -322,3 +342,85 @@ class JournalEntryLine(db.Model):
 
     def __repr__(self):
         return f'<JournalEntryLine {self.account_code}>'
+
+
+class CompanySettings(db.Model):
+    """Datos de la empresa y parámetros del sistema (registro único)."""
+    __tablename__ = 'company_settings'
+
+    id = db.Column(db.Integer, primary_key=True)
+    legal_name = db.Column(db.String(255))       # Razón social
+    trade_name = db.Column(db.String(255))       # Nombre comercial
+    rnc = db.Column(db.String(30))               # RNC
+    address = db.Column(db.String(255))
+    city = db.Column(db.String(120))
+    phone = db.Column(db.String(50))
+    email = db.Column(db.String(120))
+    currency = db.Column(db.String(10), default='RD$')
+    fiscal_year_start_month = db.Column(db.Integer, default=1)  # 1=Enero
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get():
+        """Obtener (o crear) el registro único de configuración."""
+        s = CompanySettings.query.first()
+        if not s:
+            s = CompanySettings()
+            db.session.add(s)
+            db.session.commit()
+        return s
+
+
+class FiscalPeriodLock(db.Model):
+    """Cierre de períodos contables: un período cerrado no acepta más posteos."""
+    __tablename__ = 'fiscal_period_locks'
+
+    id = db.Column(db.Integer, primary_key=True)
+    year = db.Column(db.Integer, nullable=False)
+    month = db.Column(db.Integer, nullable=False)
+    is_closed = db.Column(db.Boolean, default=True)
+    closed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    closed_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    __table_args__ = (
+        db.UniqueConstraint('year', 'month', name='uq_period_lock'),
+    )
+
+    @staticmethod
+    def is_period_closed(year, month):
+        lock = FiscalPeriodLock.query.filter_by(year=year, month=month, is_closed=True).first()
+        return lock is not None
+
+
+class AssetMovement(db.Model):
+    """Historial de movimientos del activo: alta, traslado, revaluación, baja."""
+    __tablename__ = 'asset_movements'
+
+    id = db.Column(db.Integer, primary_key=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey('assets.id'), nullable=False, index=True)
+    movement_type = db.Column(db.String(30), nullable=False)  # acquisition, transfer, revaluation, retirement
+    movement_date = db.Column(db.Date, nullable=False, default=datetime.utcnow)
+    from_value = db.Column(db.String(255))   # texto: depto/ubicación/valor anterior
+    to_value = db.Column(db.String(255))     # texto: depto/ubicación/valor nuevo
+    amount = db.Column(db.Numeric(12, 2))    # monto asociado (revaluación, baja)
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+
+    asset = db.relationship('Asset', backref=db.backref('movements', lazy='dynamic'))
+
+
+class InventorySession(db.Model):
+    """Sesión de conteo físico (inventario) con escaneo de QR."""
+    __tablename__ = 'inventory_sessions'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    status = db.Column(db.String(20), default='open')  # open | closed
+    started_at = db.Column(db.DateTime, default=datetime.utcnow)
+    started_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    closed_at = db.Column(db.DateTime)
+
+    verified_assets = db.relationship('Asset', backref='inventory_session',
+                                      foreign_keys='Asset.last_verified_session_id')

@@ -135,6 +135,7 @@ async function submitPasswordChange(event) {
 function initApp() {
     initNavigation();
     loadDashboard();
+    loadDashboardWidgets();
     loadAccounts();
     loadCategories();
     loadDepartments();
@@ -370,6 +371,7 @@ function initNavigation() {
             if (page === 'locations') loadLocations();
             if (page === 'assets') loadAssets();
             if (page === 'users') loadUsers();
+            if (page === 'config') loadConfigPage();
         });
     });
 }
@@ -1402,11 +1404,17 @@ async function viewAssetDetails(assetId, readOnly = false) {
             return;
         }
 
-        // Modo visualización (acceso vía QR): ocultar acciones de edición
+        // Modo visualización (acceso vía QR): ocultar acciones de edición y
+        // mostrar el botón de "confirmar existencia" para el conteo físico
         const detailActions = document.getElementById('assetDetailsActions');
         if (detailActions) {
             detailActions.querySelectorAll('.btn-edit-action, .btn-delete-action, .btn-journal-action')
                 .forEach(btn => btn.style.display = readOnly ? 'none' : '');
+        }
+        const verifyBar = document.getElementById('assetVerifyBar');
+        if (verifyBar) {
+            verifyBar.style.display = readOnly ? 'block' : 'none';
+            document.getElementById('assetVerifyResult').innerHTML = '';
         }
 
         const asset = data.asset;
@@ -2285,6 +2293,337 @@ async function saveUser(event) {
     } catch (error) {
         alert('Error: ' + error.message);
     }
+}
+
+// ═══════════════ FASE 2–4: CICLO DE VIDA, CONFIGURACIÓN, REPORTES ═══════════════
+const fmtRD = n => 'RD$ ' + parseFloat(n || 0).toLocaleString('es-DO', {minimumFractionDigits: 2});
+const detailAssetId = () => document.getElementById('assetDetailsModal').dataset.assetId;
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+// ---- BAJA / RETIRO ----
+async function openRetireModal() {
+    const id = detailAssetId();
+    document.getElementById('retireDate').value = todayISO();
+    document.getElementById('retireAmount').value = 0;
+    // Cargar cuentas de banco/caja
+    const accRes = await fetch('/api/accounting/accounts');
+    const accData = await accRes.json();
+    const sel = document.getElementById('retireCashAccount');
+    sel.innerHTML = '<option value="">— Seleccionar —</option>' +
+        (accData.accounts || []).filter(a => a.account_type === 'Activo')
+            .map(a => `<option value="${a.code}">${a.code} — ${a.name}</option>`).join('');
+    // Preview de valores
+    const r = await fetch(`/api/assets/${id}`);
+    const d = await r.json();
+    window._retireAsset = d.asset;
+    const cost = parseFloat(d.asset.acquisition_cost);
+    const accum = parseFloat(d.asset.accumulated_depreciation);
+    document.getElementById('retirePreview').innerHTML =
+        `<b>${d.asset.code}</b> — ${d.asset.description}<br>
+         Costo: ${fmtRD(cost)} · Deprec. acum.: ${fmtRD(accum)} · <b>Valor en libros: ${fmtRD(cost - accum)}</b>`;
+    updateRetireGainLoss();
+    document.getElementById('retireAmount').oninput = updateRetireGainLoss;
+    document.getElementById('retireModal').classList.add('active');
+}
+function updateRetireGainLoss() {
+    if (!window._retireAsset) return;
+    const cost = parseFloat(window._retireAsset.acquisition_cost);
+    const accum = parseFloat(window._retireAsset.accumulated_depreciation);
+    const nbv = cost - accum;
+    const amt = parseFloat(document.getElementById('retireAmount').value || 0);
+    const gl = amt - nbv;
+    const el = document.getElementById('retireGainLoss');
+    el.textContent = (gl >= 0 ? 'Ganancia en la baja: ' : 'Pérdida en la baja: ') + fmtRD(Math.abs(gl));
+    el.style.color = gl >= 0 ? '#166534' : '#991b1b';
+}
+async function submitRetire(e) {
+    e.preventDefault();
+    const id = detailAssetId();
+    const body = {
+        disposal_date: document.getElementById('retireDate').value,
+        disposal_amount: parseFloat(document.getElementById('retireAmount').value || 0),
+        reason: document.getElementById('retireReason').value,
+        cash_account: document.getElementById('retireCashAccount').value || null
+    };
+    const res = await fetch(`/api/lifecycle/assets/${id}/retire`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    if (d.success) {
+        alert(`✓ Activo dado de baja.\nValor en libros: ${fmtRD(d.net_book_value)}\n` +
+              `${d.gain_loss >= 0 ? 'Ganancia' : 'Pérdida'}: ${fmtRD(Math.abs(d.gain_loss))}\nAsiento #${d.journal_entry_id}`);
+        document.getElementById('retireModal').classList.remove('active');
+        closeAssetDetailsModal(); loadAssets(); loadDashboard();
+    } else alert('Error: ' + d.message);
+}
+
+// ---- TRASLADO ----
+async function openTransferModal() {
+    document.getElementById('transferDate').value = todayISO();
+    const [dRes, lRes] = await Promise.all([fetch('/api/departments'), fetch('/api/locations')]);
+    const [dData, lData] = await Promise.all([dRes.json(), lRes.json()]);
+    document.getElementById('transferDept').innerHTML = '<option value="">— Sin cambio —</option>' +
+        (dData.departments || []).map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+    document.getElementById('transferLoc').innerHTML = '<option value="">— Sin cambio —</option>' +
+        (lData.locations || []).map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+    document.getElementById('transferUser').value = '';
+    document.getElementById('transferNotes').value = '';
+    document.getElementById('transferModal').classList.add('active');
+}
+async function submitTransfer(e) {
+    e.preventDefault();
+    const id = detailAssetId();
+    const body = {date: document.getElementById('transferDate').value, notes: document.getElementById('transferNotes').value};
+    const dept = document.getElementById('transferDept').value;
+    const loc = document.getElementById('transferLoc').value;
+    const user = document.getElementById('transferUser').value.trim();
+    if (dept) body.to_department_id = parseInt(dept);
+    if (loc) body.to_location_id = parseInt(loc);
+    if (user) body.to_user = user;
+    const res = await fetch(`/api/lifecycle/assets/${id}/transfer`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    if (d.success) { alert('✓ ' + d.message); document.getElementById('transferModal').classList.remove('active'); closeAssetDetailsModal(); loadAssets(); }
+    else alert('Error: ' + d.message);
+}
+
+// ---- REVALUACIÓN ----
+function openRevalueModal() {
+    document.getElementById('revalueDate').value = todayISO();
+    document.getElementById('revalueAmount').value = '';
+    document.getElementById('revalueReason').value = '';
+    document.getElementById('revalueModal').classList.add('active');
+}
+async function submitRevalue(e) {
+    e.preventDefault();
+    const id = detailAssetId();
+    const body = {date: document.getElementById('revalueDate').value,
+        adjustment: parseFloat(document.getElementById('revalueAmount').value),
+        reason: document.getElementById('revalueReason').value};
+    const res = await fetch(`/api/lifecycle/assets/${id}/revalue`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+    const d = await res.json();
+    if (d.success) { alert(`✓ ${d.message}\nNuevo costo: ${fmtRD(d.new_cost)}`); document.getElementById('revalueModal').classList.remove('active'); closeAssetDetailsModal(); loadAssets(); loadDashboard(); }
+    else alert('Error: ' + d.message);
+}
+
+// ---- HISTORIAL ----
+async function showAssetMovements() {
+    const id = detailAssetId();
+    const res = await fetch(`/api/lifecycle/assets/${id}/movements`);
+    const d = await res.json();
+    const body = document.getElementById('movementsBody');
+    if (!d.movements || d.movements.length === 0) {
+        body.innerHTML = '<p style="color:#666;">Sin movimientos registrados.</p>';
+    } else {
+        body.innerHTML = '<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Desde</th><th>Hacia</th><th>Monto</th><th>Notas</th></tr></thead><tbody>' +
+            d.movements.map(m => `<tr><td>${m.date || '-'}</td><td>${m.type_label}</td><td>${m.from || '-'}</td><td>${m.to || '-'}</td><td>${m.amount != null ? fmtRD(m.amount) : '-'}</td><td>${m.notes || ''}</td></tr>`).join('') +
+            '</tbody></table>';
+    }
+    document.getElementById('movementsModal').classList.add('active');
+}
+
+// ---- VERIFICAR EXISTENCIA (QR / conteo) ----
+async function verifyAssetPresence() {
+    const id = detailAssetId();
+    const res = await fetch('/api/lifecycle/inventory/verify', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({asset_id: parseInt(id)})});
+    const d = await res.json();
+    const el = document.getElementById('assetVerifyResult');
+    el.innerHTML = d.success
+        ? `<span style="color:#166534;font-weight:600;"><i class="fas fa-check-circle"></i> ${d.message}</span>`
+        : `<span style="color:#991b1b;">${d.message}</span>`;
+}
+
+// ---- CONFIGURACIÓN: EMPRESA ----
+async function loadCompany() {
+    const d = await (await fetch('/api/settings/company')).json();
+    if (!d.success) return;
+    const c = d.company;
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v || ''; };
+    set('coLegalName', c.legal_name); set('coTradeName', c.trade_name); set('coRnc', c.rnc);
+    set('coPhone', c.phone); set('coAddress', c.address); set('coCity', c.city);
+    set('coCurrency', c.currency || 'RD$'); set('coFiscalStart', c.fiscal_year_start_month || 1);
+}
+async function saveCompany() {
+    const g = id => document.getElementById(id).value;
+    const body = {legal_name: g('coLegalName'), trade_name: g('coTradeName'), rnc: g('coRnc'),
+        phone: g('coPhone'), address: g('coAddress'), city: g('coCity'), currency: g('coCurrency'),
+        fiscal_year_start_month: parseInt(g('coFiscalStart')) || 1};
+    const d = await (await fetch('/api/settings/company', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+    document.getElementById('coResult').innerHTML = d.success ? '<span style="color:#166534;">✓ Guardado</span>' : '<span style="color:#991b1b;">' + d.message + '</span>';
+}
+
+// ---- CONFIGURACIÓN: CATEGORÍAS ----
+let _accountsCache = [];
+async function loadCatConfig() {
+    const [cRes, aRes] = await Promise.all([fetch('/api/settings/categories/config'), fetch('/api/accounting/accounts')]);
+    const cData = await cRes.json(); const aData = await aRes.json();
+    _accountsCache = aData.accounts || [];
+    const opts = (sel) => '<option value="">—</option>' + _accountsCache.map(a => `<option value="${a.code}" ${a.code === sel ? 'selected' : ''}>${a.code}</option>`).join('');
+    const tbody = document.getElementById('catConfigTable');
+    tbody.innerHTML = (cData.categories || []).map(c => `
+        <tr data-id="${c.id}">
+            <td><b>${c.name}</b></td>
+            <td><select class="cc-method" style="padding:6px;"><option value="linea_recta" ${c.depreciation_method==='linea_recta'?'selected':''}>Línea recta</option><option value="saldos_decrecientes" ${c.depreciation_method==='saldos_decrecientes'?'selected':''}>Saldos decrec.</option></select></td>
+            <td><input class="cc-rate" type="number" step="0.01" value="${c.depreciation_rate ?? ''}" style="width:70px;padding:6px;"></td>
+            <td><input class="cc-tax" type="number" step="0.01" value="${c.tax_depreciation_rate ?? ''}" style="width:70px;padding:6px;"></td>
+            <td><select class="cc-asset" style="padding:6px;">${opts(c.asset_account)}</select></td>
+            <td><select class="cc-accum" style="padding:6px;">${opts(c.accumulated_depreciation_account)}</select></td>
+            <td><select class="cc-exp" style="padding:6px;">${opts(c.depreciation_expense_account)}</select></td>
+            <td><select class="cc-gl" style="padding:6px;">${opts(c.gain_loss_account)}</select></td>
+            <td><button class="btn" style="padding:6px 10px;" onclick="saveCatConfig(${c.id}, this)">Guardar</button></td>
+        </tr>`).join('') || '<tr><td colspan="9">No hay categorías</td></tr>';
+}
+async function saveCatConfig(id, btn) {
+    const tr = btn.closest('tr');
+    const body = {
+        depreciation_method: tr.querySelector('.cc-method').value,
+        tax_depreciation_rate: tr.querySelector('.cc-tax').value || null,
+        asset_account: tr.querySelector('.cc-asset').value || null,
+        accumulated_depreciation_account: tr.querySelector('.cc-accum').value || null,
+        depreciation_expense_account: tr.querySelector('.cc-exp').value || null,
+        gain_loss_account: tr.querySelector('.cc-gl').value || null
+    };
+    const d = await (await fetch(`/api/settings/categories/${id}/config`, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+    btn.textContent = d.success ? '✓' : 'Error';
+    setTimeout(() => btn.textContent = 'Guardar', 1500);
+}
+
+// ---- CONFIGURACIÓN: PERÍODOS ----
+async function loadPeriods() {
+    const d = await (await fetch('/api/lifecycle/periods')).json();
+    const el = document.getElementById('periodsList');
+    if (!d.periods || d.periods.length === 0) { el.innerHTML = '<p style="color:#666;">Ningún período cerrado.</p>'; return; }
+    el.innerHTML = '<table><thead><tr><th>Período</th><th>Estado</th><th></th></tr></thead><tbody>' +
+        d.periods.map(p => `<tr><td>${String(p.month).padStart(2,'0')}/${p.year}</td>
+            <td>${p.is_closed ? '<span style="color:#991b1b;">🔒 Cerrado</span>' : '<span style="color:#166534;">Abierto</span>'}</td>
+            <td>${p.is_closed ? `<button class="btn" style="padding:5px 10px;background:#475569;" onclick="reopenPeriod(${p.year},${p.month})">Reabrir</button>` : ''}</td></tr>`).join('') +
+        '</tbody></table>';
+}
+async function closePeriod() {
+    const year = parseInt(document.getElementById('lockYear').value), month = parseInt(document.getElementById('lockMonth').value);
+    const d = await (await fetch('/api/lifecycle/periods/close', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({year, month})})).json();
+    if (d.success) loadPeriods(); else alert(d.message);
+}
+async function reopenPeriod(year, month) {
+    const d = await (await fetch('/api/lifecycle/periods/open', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({year, month})})).json();
+    if (d.success) loadPeriods();
+}
+
+// ---- CONFIGURACIÓN: INVENTARIO ----
+async function startInventory() {
+    const name = document.getElementById('invName').value.trim();
+    const d = await (await fetch('/api/lifecycle/inventory/sessions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})})).json();
+    if (d.success) { document.getElementById('invScanResult').innerHTML = '<span style="color:#166534;">✓ Conteo iniciado. Ya puedes escanear.</span>'; loadInventoryReport(); }
+}
+async function scanInventory() {
+    const code = document.getElementById('invScan').value.trim();
+    if (!code) return;
+    const d = await (await fetch('/api/lifecycle/inventory/verify', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})})).json();
+    const el = document.getElementById('invScanResult');
+    el.innerHTML = d.success
+        ? `<span style="color:#166534;"><i class="fas fa-check-circle"></i> ${d.asset.code} — ${d.asset.description}: ${d.message}</span>`
+        : `<span style="color:#991b1b;">${d.message}</span>`;
+    document.getElementById('invScan').value = '';
+    document.getElementById('invScan').focus();
+    if (d.success) loadInventoryReport();
+}
+async function loadInventoryReport() {
+    const sessions = await (await fetch('/api/lifecycle/inventory/sessions')).json();
+    const open = (sessions.sessions || []).find(s => s.status === 'open') || (sessions.sessions || [])[0];
+    if (!open) { document.getElementById('invReport').innerHTML = '<p style="color:#666;">Aún no hay conteos.</p>'; return; }
+    const d = await (await fetch(`/api/lifecycle/inventory/sessions/${open.id}/report`)).json();
+    document.getElementById('invReport').innerHTML =
+        `<div style="display:flex;gap:20px;margin-bottom:12px;font-weight:600;">
+            <span>Sesión: ${d.session.name} (${d.session.status})</span>
+            <span style="color:#166534;">Encontrados: ${d.found_count}</span>
+            <span style="color:#991b1b;">Faltantes: ${d.missing_count}</span>
+            <span>Total: ${d.total}</span>
+            ${d.session.status === 'open' ? `<button class="btn" style="padding:4px 10px;background:#b45309;" onclick="closeInventory(${d.session.id})">Cerrar conteo</button>` : ''}
+         </div>
+         ${d.missing_count ? '<details><summary style="cursor:pointer;color:#991b1b;">Ver faltantes (' + d.missing_count + ')</summary><table><thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Depto</th></tr></thead><tbody>' +
+            d.missing.map(a => `<tr><td>${a.code}</td><td>${a.description}</td><td>${a.category}</td><td>${a.department}</td></tr>`).join('') + '</tbody></table></details>' : ''}`;
+}
+async function closeInventory(id) {
+    await fetch(`/api/lifecycle/inventory/sessions/${id}/close`, {method: 'POST'});
+    loadInventoryReport();
+}
+
+function loadConfigPage() {
+    loadCompany(); loadCatConfig(); loadPeriods(); loadInventoryReport();
+}
+
+// ---- WIDGETS DEL DASHBOARD ----
+async function loadDashboardWidgets() {
+    const cont = document.getElementById('dashboardWidgets');
+    if (!cont) return;
+    const widget = (icon, color, label, value, sub) => `
+        <div style="background:white;border-radius:10px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.08);border-left:4px solid ${color};">
+            <div style="display:flex;align-items:center;gap:10px;">
+                <i class="fas ${icon}" style="color:${color};font-size:22px;"></i>
+                <div><div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">${label}</div>
+                <div style="font-size:22px;font-weight:700;color:#0f172a;">${value}</div>
+                ${sub ? `<div style="font-size:12px;color:#94a3b8;">${sub}</div>` : ''}</div>
+            </div>
+        </div>`;
+    try {
+        const [regRes, invRes, perRes] = await Promise.all([
+            fetch('/api/lifecycle/reports/register?include_retired=1'),
+            fetch('/api/lifecycle/inventory/sessions'),
+            fetch('/api/lifecycle/periods')
+        ]);
+        const reg = await regRes.json(), inv = await invRes.json(), per = await perRes.json();
+        const activos = reg.rows.filter(r => r.status === 'active').length;
+        const bajas = reg.rows.filter(r => r.status === 'retired').length;
+
+        let invHtml = widget('fa-clipboard-check', '#0ea5e9', 'Conteo Físico', 'Sin iniciar', 'Inícialo en Configuración');
+        const openSes = (inv.sessions || []).find(s => s.status === 'open') || (inv.sessions || [])[0];
+        if (openSes) {
+            const rep = await (await fetch(`/api/lifecycle/inventory/sessions/${openSes.id}/report`)).json();
+            invHtml = widget('fa-clipboard-check', '#0ea5e9', 'Conteo Físico',
+                `${rep.found_count}/${rep.total}`, `${rep.missing_count} por verificar · ${openSes.status}`);
+        }
+        const closed = (per.periods || []).filter(p => p.is_closed);
+        const lastClosed = closed.length ? `${String(closed[0].month).padStart(2,'0')}/${closed[0].year}` : 'Ninguno';
+
+        cont.innerHTML =
+            widget('fa-cubes', '#003D7A', 'Activos Activos', activos, 'en operación') +
+            widget('fa-box-open', '#b45309', 'Dados de Baja', bajas, 'retirados / vendidos') +
+            invHtml +
+            widget('fa-lock', '#64748b', 'Último Período Cerrado', lastClosed, `${closed.length} cerrado(s)`);
+    } catch (e) { /* silencioso */ }
+}
+
+// ---- REPORTES DE GESTIÓN ----
+async function reportMovement() {
+    const out = document.getElementById('mgmtReportOutput');
+    out.innerHTML = 'Cargando...';
+    const year = new Date().getFullYear();
+    const d = await (await fetch(`/api/lifecycle/reports/movement?from=${year}-01-01&to=${year}-12-31`)).json();
+    let tA = 0, tR = 0, tD = 0;
+    out.innerHTML = `<h4>Movimiento de Activos ${year} (adiciones · bajas · depreciación)</h4>
+        <table><thead><tr><th>Categoría</th><th>Adiciones</th><th># Alta</th><th>Bajas</th><th># Baja</th><th>Depreciación</th></tr></thead><tbody>` +
+        d.rows.map(r => { tA += r.additions; tR += r.retirements; tD += r.depreciation;
+            return `<tr><td>${r.category}</td><td>${fmtRD(r.additions)}</td><td>${r.additions_n}</td><td>${fmtRD(r.retirements)}</td><td>${r.retirements_n}</td><td>${fmtRD(r.depreciation)}</td></tr>`; }).join('') +
+        `<tr style="font-weight:700;background:#f1f5f9;"><td>TOTAL</td><td>${fmtRD(tA)}</td><td></td><td>${fmtRD(tR)}</td><td></td><td>${fmtRD(tD)}</td></tr></tbody></table>`;
+}
+async function reportRegister() {
+    const out = document.getElementById('mgmtReportOutput');
+    out.innerHTML = 'Cargando...';
+    const d = await (await fetch('/api/lifecycle/reports/register')).json();
+    out.innerHTML = `<h4>Libro de Activos Fijos — ${d.totals.count} activos</h4>
+        <table><thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Costo</th><th>Dep. Acum.</th><th>Valor en Libros</th></tr></thead><tbody>` +
+        d.rows.map(r => `<tr><td>${r.code}</td><td>${r.description}</td><td>${r.category}</td><td>${fmtRD(r.cost)}</td><td>${fmtRD(r.accumulated)}</td><td>${fmtRD(r.nbv)}</td></tr>`).join('') +
+        `<tr style="font-weight:700;background:#f1f5f9;"><td colspan="3">TOTAL</td><td>${fmtRD(d.totals.cost)}</td><td>${fmtRD(d.totals.accumulated)}</td><td>${fmtRD(d.totals.nbv)}</td></tr></tbody></table>`;
+}
+async function reportTaxVsBook() {
+    const out = document.getElementById('mgmtReportOutput');
+    out.innerHTML = 'Cargando...';
+    const d = await (await fetch('/api/lifecycle/reports/tax-vs-book')).json();
+    out.innerHTML = `<h4>Depreciación Anual: Fiscal vs Contable</h4>
+        <table><thead><tr><th>Categoría</th><th>Base</th><th>Tasa NIIF</th><th>Tasa Fiscal</th><th>Deprec. Contable</th><th>Deprec. Fiscal</th><th>Diferencia</th></tr></thead><tbody>` +
+        d.rows.map(r => `<tr><td>${r.category}</td><td>${fmtRD(r.base)}</td><td>${r.book_rate}%</td><td>${r.tax_rate}%</td><td>${fmtRD(r.book_annual)}</td><td>${fmtRD(r.tax_annual)}</td><td>${fmtRD(r.difference)}</td></tr>`).join('') +
+        `<tr style="font-weight:700;background:#f1f5f9;"><td colspan="4">TOTAL</td><td>${fmtRD(d.totals.book)}</td><td>${fmtRD(d.totals.tax)}</td><td>${fmtRD(d.totals.difference)}</td></tr></tbody></table>`;
 }
 
 console.log('✓ App script loaded');

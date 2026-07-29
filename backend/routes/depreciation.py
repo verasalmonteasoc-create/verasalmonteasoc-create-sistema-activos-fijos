@@ -144,6 +144,14 @@ def process_monthly_depreciation():
         if not year or not month:
             return jsonify({'success': False, 'message': 'Año y mes requeridos'}), 400
 
+        # No permitir postear a un período contable cerrado
+        from backend.models import FiscalPeriodLock
+        if FiscalPeriodLock.is_period_closed(year, month):
+            return jsonify({
+                'success': False,
+                'message': f'El período {month}/{year} está cerrado. Reábrelo en Configuración para poder procesar.'
+            }), 409
+
         # Verificar si ya existe depreciación para este período
         existing = DepreciationRecord.query.filter(
             DepreciationRecord.year == year,

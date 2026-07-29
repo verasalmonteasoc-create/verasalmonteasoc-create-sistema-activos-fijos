@@ -45,21 +45,52 @@ def create_app(config=None):
     # Crear contexto de aplicación y crear tablas
     with app.app_context():
         try:
-            db.create_all()
+            db.create_all()  # crea tablas nuevas (empresa, cierres, movimientos, inventario)
 
-            # Migración idempotente: agregar la columna en BDs ya existentes
-            try:
-                db.session.execute(text(
-                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE"
-                ))
-                db.session.commit()
-            except Exception:
-                db.session.rollback()  # p.ej. SQLite en testing: la columna ya viene de create_all
+            # Migraciones idempotentes de COLUMNAS nuevas en tablas existentes.
+            # (create_all no altera tablas ya creadas — por eso el ALTER IF NOT EXISTS)
+            _migrations = [
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE asset_categories ADD COLUMN IF NOT EXISTS depreciation_method VARCHAR(30) DEFAULT 'linea_recta'",
+                "ALTER TABLE asset_categories ADD COLUMN IF NOT EXISTS tax_depreciation_rate NUMERIC(5,2)",
+                "ALTER TABLE asset_categories ADD COLUMN IF NOT EXISTS default_residual_percent NUMERIC(5,2) DEFAULT 10",
+                "ALTER TABLE asset_categories ADD COLUMN IF NOT EXISTS default_useful_life INTEGER",
+                "ALTER TABLE asset_categories ADD COLUMN IF NOT EXISTS gain_loss_account VARCHAR(50)",
+                "ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_date DATE",
+                "ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_amount NUMERIC(12,2)",
+                "ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_reason VARCHAR(255)",
+                "ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_gain_loss NUMERIC(12,2)",
+                "ALTER TABLE assets ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMP",
+                "ALTER TABLE assets ADD COLUMN IF NOT EXISTS last_verified_session_id INTEGER",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS reference VARCHAR(50)",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS entry_type VARCHAR(50) DEFAULT 'general'",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft'",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS total_debit NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS total_credit NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS asset_id INTEGER",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS year INTEGER",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS month INTEGER",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS debit_account_id INTEGER",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS credit_account_id INTEGER",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS is_reversed BOOLEAN DEFAULT FALSE",
+                "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS reversal_of_id INTEGER",
+            ]
+            for stmt in _migrations:
+                try:
+                    db.session.execute(text(stmt))
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()  # p.ej. SQLite en testing (columna ya viene de create_all)
 
             logger.info("✓ Base de datos inicializada")
 
-            # Crear usuario administrador por defecto si no existe ninguno
+            # Crear usuario administrador por defecto si no existe ninguno.
+            # La contraseña NO está en el código: se toma de ADMIN_INITIAL_PASSWORD
+            # o se genera al azar y se registra una sola vez en el log del servidor.
             if User.query.count() == 0:
+                import os as _os
+                import secrets as _secrets
+                initial_pw = _os.getenv('ADMIN_INITIAL_PASSWORD') or _secrets.token_urlsafe(10)
                 admin = User(
                     username='admin',
                     email='admin@sistema.com',
@@ -69,10 +100,14 @@ def create_app(config=None):
                     active=True,
                     must_change_password=True  # obliga a cambiarla en el primer ingreso
                 )
-                admin.set_password('Admin123!')
+                admin.set_password(initial_pw)
                 db.session.add(admin)
                 db.session.commit()
-                logger.warning("✓ Usuario admin creado (admin / Admin123!) — se pedirá cambiarla al ingresar")
+                logger.warning("=" * 60)
+                logger.warning("USUARIO ADMIN CREADO  ->  usuario: admin")
+                logger.warning(f"CONTRASENA INICIAL    ->  {initial_pw}")
+                logger.warning("Se pedira cambiarla en el primer ingreso. Guardala.")
+                logger.warning("=" * 60)
         except Exception as e:
             logger.error(f"✗ Error inicializando BD: {e}")
 
@@ -155,6 +190,8 @@ def register_blueprints(app):
     from backend.routes.reports import reports_bp
     from backend.routes.accounting import accounting_bp
     from backend.routes.depreciation import depreciation_bp
+    from backend.routes.lifecycle import lifecycle_bp
+    from backend.routes.settings import settings_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
@@ -164,6 +201,8 @@ def register_blueprints(app):
     app.register_blueprint(reports_bp)
     app.register_blueprint(accounting_bp)
     app.register_blueprint(depreciation_bp)
+    app.register_blueprint(lifecycle_bp)
+    app.register_blueprint(settings_bp)
 
 
 # Crear aplicación

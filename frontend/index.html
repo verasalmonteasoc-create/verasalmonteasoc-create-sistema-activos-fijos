@@ -199,6 +199,9 @@
                             </div>
                         </div>
 
+                        <!-- Widgets de gestión -->
+                        <div id="dashboardWidgets" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:15px;margin:20px 0;"></div>
+
                         <div class="filters-section">
                             <div class="filter-row">
                                 <div class="filter-group">
@@ -544,15 +547,21 @@
                         </div>
                     </div>
 
+                    <!-- Reportes de gestión (en pantalla) -->
+                    <h3 style="margin-top:35px;color:#003D7A;">Reportes de Gestión</h3>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+                        <button class="btn" onclick="reportMovement()"><i class="fas fa-random"></i> Movimiento de Activos (roll-forward)</button>
+                        <button class="btn" onclick="reportRegister()"><i class="fas fa-book"></i> Libro de Activos Fijos</button>
+                        <button class="btn" onclick="reportTaxVsBook()"><i class="fas fa-balance-scale"></i> Fiscal vs Contable</button>
+                    </div>
+                    <div id="mgmtReportOutput" style="overflow-x:auto;"></div>
+
                     <div style="background: #f0f7ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 20px; margin-top: 30px;">
                         <h3 style="color: #0369a1; margin-top: 0;">📊 Información de Reportes</h3>
                         <ul style="margin: 10px 0; padding-left: 20px;">
-                            <li><strong>Depreciación Detallada:</strong> Detalles de depreciación mensuales por cada activo individual</li>
-                            <li><strong>Resumen de Depreciación:</strong> Datos consolidados agrupados por categoría de activo</li>
-                            <li><strong>Asientos Contables:</strong> Registro de todas las transacciones contables generadas</li>
-                            <li><strong>Movimiento de Activos:</strong> Adiciones de nuevos activos y retiros del período</li>
-                            <li><strong>Reconciliación:</strong> Comparativa entre el valor en sistema vs registros contables</li>
-                            <li><strong>Pista de Auditoría:</strong> Historial de cambios realizados en el sistema</li>
+                            <li><strong>Movimiento de Activos:</strong> Adiciones + bajas + depreciación del período, por categoría (el cuadro de auditoría).</li>
+                            <li><strong>Libro de Activos Fijos:</strong> Costo, depreciación acumulada y valor en libros de cada activo.</li>
+                            <li><strong>Fiscal vs Contable:</strong> Compara la depreciación NIIF con la fiscal (DGII) por categoría.</li>
                         </ul>
                     </div>
                 </div>
@@ -613,6 +622,63 @@
                             <button class="btn" onclick="importConfigDepartments()"><i class="fas fa-upload"></i> Importar Departamentos</button>
                             <div id="cfgDeptResult" style="display: none; margin-top: 15px;"></div>
                         </div>
+                    </div>
+
+                    <!-- Datos de la empresa -->
+                    <div style="background:white;border-left:4px solid #003D7A;padding:25px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-top:25px;">
+                        <h3 style="color:#003D7A;margin-top:0;"><i class="fas fa-building"></i> Datos de la Empresa</h3>
+                        <p style="font-size:13px;color:#666;">Aparecen en los encabezados de los reportes.</p>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+                            <div><label style="font-size:13px;color:#555;">Razón Social</label><input type="text" id="coLegalName" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">Nombre Comercial</label><input type="text" id="coTradeName" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">RNC</label><input type="text" id="coRnc" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">Teléfono</label><input type="text" id="coPhone" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">Dirección</label><input type="text" id="coAddress" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">Ciudad</label><input type="text" id="coCity" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">Moneda</label><input type="text" id="coCurrency" value="RD$" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;color:#555;">Inicio de Año Fiscal (mes)</label><input type="number" min="1" max="12" id="coFiscalStart" value="1" style="width:100%;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                        </div>
+                        <button class="btn" style="margin-top:15px;" onclick="saveCompany()"><i class="fas fa-save"></i> Guardar</button>
+                        <span id="coResult" style="margin-left:12px;font-size:13px;"></span>
+                    </div>
+
+                    <!-- Configuración de categorías -->
+                    <div style="background:white;border-left:4px solid #10B981;padding:25px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-top:25px;">
+                        <h3 style="color:#003D7A;margin-top:0;"><i class="fas fa-folder-open"></i> Configuración de Categorías</h3>
+                        <p style="font-size:13px;color:#666;">Método de depreciación, tasa fiscal (DGII) y cuentas contables por categoría (determinación de cuentas).</p>
+                        <div style="overflow-x:auto;"><table><thead><tr>
+                            <th>Categoría</th><th>Método</th><th>Tasa % (NIIF)</th><th>Tasa Fiscal %</th>
+                            <th>Cta. Activo</th><th>Cta. Dep. Acum.</th><th>Cta. Gasto Dep.</th><th>Cta. Gan/Pérd.</th><th></th>
+                        </tr></thead><tbody id="catConfigTable"><tr><td colspan="9">Cargando...</td></tr></tbody></table></div>
+                    </div>
+
+                    <!-- Cierre de períodos -->
+                    <div style="background:white;border-left:4px solid #F97316;padding:25px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-top:25px;">
+                        <h3 style="color:#003D7A;margin-top:0;"><i class="fas fa-lock"></i> Cierre de Períodos Contables</h3>
+                        <p style="font-size:13px;color:#666;">Un período cerrado no acepta más contabilización de depreciación ni bajas.</p>
+                        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:15px;">
+                            <div><label style="font-size:13px;">Año</label><input type="number" id="lockYear" value="2026" style="width:100px;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <div><label style="font-size:13px;">Mes</label><input type="number" min="1" max="12" id="lockMonth" value="1" style="width:80px;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <button class="btn" style="background:#b45309;" onclick="closePeriod()"><i class="fas fa-lock"></i> Cerrar período</button>
+                        </div>
+                        <div id="periodsList" style="overflow-x:auto;"></div>
+                    </div>
+
+                    <!-- Conteo físico / inventario -->
+                    <div style="background:white;border-left:4px solid #0ea5e9;padding:25px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-top:25px;">
+                        <h3 style="color:#003D7A;margin-top:0;"><i class="fas fa-clipboard-check"></i> Conteo Físico (Inventario con QR)</h3>
+                        <p style="font-size:13px;color:#666;">Inicia una sesión de conteo; luego escanea el QR de cada activo (o escribe su código) para marcarlo como encontrado.</p>
+                        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:15px;">
+                            <div><label style="font-size:13px;">Nombre del conteo</label><input type="text" id="invName" placeholder="Conteo físico 2026" style="width:220px;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <button class="btn" style="background:#0ea5e9;" onclick="startInventory()"><i class="fas fa-play"></i> Iniciar conteo</button>
+                        </div>
+                        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:15px;">
+                            <div><label style="font-size:13px;">Escanear / escribir código</label><input type="text" id="invScan" placeholder="VEH-001" onkeydown="if(event.key==='Enter')scanInventory()" style="width:220px;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
+                            <button class="btn" onclick="scanInventory()"><i class="fas fa-check"></i> Marcar</button>
+                            <button class="btn" style="background:#475569;" onclick="loadInventoryReport()"><i class="fas fa-sync"></i> Ver avance</button>
+                        </div>
+                        <div id="invScanResult" style="font-size:14px;margin-bottom:12px;"></div>
+                        <div id="invReport" style="overflow-x:auto;"></div>
                     </div>
                 </div>
 
@@ -1245,15 +1311,85 @@
                 <p><strong>Última Actualización:</strong> <span id="detailUpdatedAt"></span></p>
             </div>
 
-            <!-- Acciones -->
-            <div id="assetDetailsActions" style="margin-top: 20px; display: flex; gap: 10px;">
-                <button class="btn btn-edit-action" onclick="editAssetFromDetails()">Editar</button>
-                <button class="btn btn-journal-action" onclick="createAssetJournalEntry()" style="background: #FF9800;">
-                    <i class="fas fa-receipt"></i> Generar Asiento
+            <!-- Botón de conteo físico (visible al abrir vía QR) -->
+            <div id="assetVerifyBar" style="display: none; margin-top: 20px; background: #eef6ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 14px; text-align: center;">
+                <button class="btn" style="background: #0ea5e9;" onclick="verifyAssetPresence()">
+                    <i class="fas fa-clipboard-check"></i> Confirmar existencia (conteo físico)
                 </button>
+                <div id="assetVerifyResult" style="margin-top: 10px; font-size: 14px;"></div>
+            </div>
+
+            <!-- Acciones -->
+            <div id="assetDetailsActions" style="margin-top: 20px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-edit-action" onclick="editAssetFromDetails()">Editar</button>
+                <button class="btn btn-edit-action" style="background: #6366f1;" onclick="openTransferModal()"><i class="fas fa-exchange-alt"></i> Trasladar</button>
+                <button class="btn btn-edit-action" style="background: #8b5cf6;" onclick="openRevalueModal()"><i class="fas fa-sliders-h"></i> Revaluar</button>
+                <button class="btn btn-edit-action" style="background: #b45309;" onclick="openRetireModal()"><i class="fas fa-box-open"></i> Dar de baja</button>
+                <button class="btn" style="background: #475569;" onclick="showAssetMovements()"><i class="fas fa-history"></i> Historial</button>
                 <button class="btn btn-danger btn-delete-action" onclick="deleteAssetFromDetails()">Eliminar</button>
                 <button class="btn" style="background: #28a745;" onclick="closeAssetDetailsModal()">Cerrar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Modal Dar de baja -->
+    <div id="retireModal" class="modal">
+        <div class="modal-content" style="max-width: 520px;">
+            <span class="close" onclick="document.getElementById('retireModal').classList.remove('active')">&times;</span>
+            <h2>Dar de baja el activo</h2>
+            <div id="retirePreview" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;font-size:14px;"></div>
+            <form id="retireForm" onsubmit="submitRetire(event)">
+                <div class="form-group"><label>Fecha de baja *</label><input type="date" id="retireDate" required></div>
+                <div class="form-group"><label>Motivo *</label>
+                    <select id="retireReason"><option>Venta</option><option>Desecho</option><option>Pérdida / Robo</option><option>Donación</option></select>
+                </div>
+                <div class="form-group"><label>Monto recibido (venta) — 0 si es desecho</label>
+                    <input type="number" step="0.01" id="retireAmount" value="0"></div>
+                <div class="form-group" id="retireCashGroup"><label>Cuenta de banco/caja del cobro</label>
+                    <select id="retireCashAccount"><option value="">— Seleccionar —</option></select></div>
+                <div id="retireGainLoss" style="margin:10px 0;font-weight:600;"></div>
+                <button type="submit" class="btn" style="background:#b45309;"><i class="fas fa-box-open"></i> Confirmar baja</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Traslado -->
+    <div id="transferModal" class="modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <span class="close" onclick="document.getElementById('transferModal').classList.remove('active')">&times;</span>
+            <h2>Trasladar activo</h2>
+            <form id="transferForm" onsubmit="submitTransfer(event)">
+                <div class="form-group"><label>Fecha</label><input type="date" id="transferDate"></div>
+                <div class="form-group"><label>Nuevo departamento</label><select id="transferDept"><option value="">— Sin cambio —</option></select></div>
+                <div class="form-group"><label>Nueva localidad</label><select id="transferLoc"><option value="">— Sin cambio —</option></select></div>
+                <div class="form-group"><label>Nuevo usuario responsable</label><input type="text" id="transferUser"></div>
+                <div class="form-group"><label>Notas</label><input type="text" id="transferNotes"></div>
+                <button type="submit" class="btn" style="background:#6366f1;"><i class="fas fa-exchange-alt"></i> Registrar traslado</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Revaluación / Deterioro -->
+    <div id="revalueModal" class="modal">
+        <div class="modal-content" style="max-width: 480px;">
+            <span class="close" onclick="document.getElementById('revalueModal').classList.remove('active')">&times;</span>
+            <h2>Revaluación / Deterioro</h2>
+            <p style="font-size:13px;color:#666;">Monto <b>positivo</b> = revaluación (sube el valor). Monto <b>negativo</b> = deterioro (baja el valor).</p>
+            <form id="revalueForm" onsubmit="submitRevalue(event)">
+                <div class="form-group"><label>Fecha</label><input type="date" id="revalueDate"></div>
+                <div class="form-group"><label>Ajuste de valor (RD$) *</label><input type="number" step="0.01" id="revalueAmount" required></div>
+                <div class="form-group"><label>Motivo</label><input type="text" id="revalueReason" placeholder="Ej: Revaluación por avalúo 2026"></div>
+                <button type="submit" class="btn" style="background:#8b5cf6;"><i class="fas fa-sliders-h"></i> Aplicar ajuste</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal Historial de movimientos -->
+    <div id="movementsModal" class="modal">
+        <div class="modal-content" style="max-width: 640px;">
+            <span class="close" onclick="document.getElementById('movementsModal').classList.remove('active')">&times;</span>
+            <h2>Historial del activo</h2>
+            <div id="movementsBody" style="overflow-x:auto;"></div>
         </div>
     </div>
 
@@ -1281,6 +1417,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=28"></script>
+    <script src="js/app.js?v=29"></script>
 </body>
 </html>
