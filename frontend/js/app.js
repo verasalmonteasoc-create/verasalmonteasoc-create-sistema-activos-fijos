@@ -1,3 +1,38 @@
+// ═══════════ RESPONSIVE: menú lateral deslizante y tablas con scroll ═══════════
+function toggleSidebar(force) {
+    const sb = document.querySelector('.sidebar');
+    const bd = document.getElementById('sidebarBackdrop');
+    if (!sb || !bd) return;
+    const open = (force === undefined) ? !sb.classList.contains('open') : force;
+    sb.classList.toggle('open', open);
+    bd.classList.toggle('active', open);
+}
+
+/* Envuelve cada tabla en un contenedor con scroll horizontal, para que en
+   celular/tablet se pueda desplazar sin romper el ancho de la página. */
+function wrapTables(root) {
+    (root || document).querySelectorAll('table').forEach(t => {
+        const p = t.parentElement;
+        if (!p || p.classList.contains('table-scroll')) return;
+        if (getComputedStyle(p).overflowX === 'auto') return;  // ya tiene scroll propio
+        const w = document.createElement('div');
+        w.className = 'table-scroll';
+        p.insertBefore(w, t);
+        w.appendChild(t);
+    });
+}
+
+/* Las tablas se dibujan dinámicamente; este observador las envuelve al vuelo. */
+function watchTables() {
+    const content = document.querySelector('.content');
+    if (!content || !window.MutationObserver) return;
+    let pending = null;
+    new MutationObserver(() => {
+        clearTimeout(pending);
+        pending = setTimeout(() => wrapTables(content), 120);
+    }).observe(content, {childList: true, subtree: true});
+}
+
 // AUTENTICACIÓN E INICIALIZACIÓN
 let currentUser = null;
 
@@ -134,6 +169,8 @@ async function submitPasswordChange(event) {
 
 function initApp() {
     initNavigation();
+    wrapTables();
+    watchTables();
     loadDashboard();
     loadDashboardWidgets();
     loadDashboardExtras();
@@ -357,6 +394,9 @@ function initNavigation() {
             // Actualizar activo
             document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
             link.classList.add('active');
+
+            // En celular/tablet, cerrar el cajón al elegir una opción
+            toggleSidebar(false);
 
             // Mostrar página
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
