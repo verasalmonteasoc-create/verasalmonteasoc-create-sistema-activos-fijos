@@ -421,6 +421,59 @@ class InventorySession(db.Model):
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
     started_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     closed_at = db.Column(db.DateTime)
+    # Alcance opcional: contar solo un departamento o categoría (permite dividir
+    # el trabajo entre varias personas y que "faltantes" se calcule sobre el alcance)
+    scope_department_id = db.Column(db.Integer, db.ForeignKey('departments.id'))
+    scope_category_id = db.Column(db.Integer, db.ForeignKey('asset_categories.id'))
+    notes = db.Column(db.Text)
+    applied_at = db.Column(db.DateTime)  # cuándo se aplicaron los hallazgos al maestro
 
     verified_assets = db.relationship('Asset', backref='inventory_session',
                                       foreign_keys='Asset.last_verified_session_id')
+    counts = db.relationship('InventoryCount', backref='session', lazy='dynamic',
+                             cascade='all, delete-orphan')
+
+
+class InventoryCount(db.Model):
+    """Una línea de conteo: el activo X fue encontrado físicamente en la sesión Y.
+    Guarda dónde y en qué estado se encontró, para detectar diferencias contra
+    el maestro de activos."""
+    __tablename__ = 'inventory_counts'
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('inventory_sessions.id'), nullable=False, index=True)
+    asset_id = db.Column(db.Integer, db.ForeignKey('assets.id'), nullable=False, index=True)
+    counted_at = db.Column(db.DateTime, default=datetime.utcnow)
+    counted_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    method = db.Column(db.String(20), default='qr')  # qr | manual
+    # Lo que se observó en el campo
+    found_department_id = db.Column(db.Integer, db.ForeignKey('departments.id'))
+    found_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'))
+    found_condition = db.Column(db.String(20))  # good | fair | poor
+    observations = db.Column(db.Text)
+    # Diferencias detectadas automáticamente vs el maestro
+    has_discrepancy = db.Column(db.Boolean, default=False)
+    discrepancy_notes = db.Column(db.String(500))
+
+    __table_args__ = (
+        db.UniqueConstraint('session_id', 'asset_id', name='uq_count_session_asset'),
+    )
+
+    asset = db.relationship('Asset', foreign_keys=[asset_id])
+    found_department = db.relationship('Department', foreign_keys=[found_department_id])
+    found_location = db.relationship('Location', foreign_keys=[found_location_id])
+
+
+class InventoryUnregistered(db.Model):
+    """Activo encontrado físicamente que NO está en el sistema (sobrante)."""
+    __tablename__ = 'inventory_unregistered'
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('inventory_sessions.id'), nullable=False, index=True)
+    description = db.Column(db.String(255), nullable=False)
+    scanned_code = db.Column(db.String(120))   # lo que devolvió el QR, si aplica
+    department_id = db.Column(db.Integer, db.ForeignKey('departments.id'))
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'))
+    observations = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))

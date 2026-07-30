@@ -373,6 +373,7 @@ function initNavigation() {
             if (page === 'assets') loadAssets();
             if (page === 'users') loadUsers();
             if (page === 'config') loadConfigPage();
+            if (page === 'inventory') loadInventoryPage();
         });
     });
 }
@@ -2426,13 +2427,18 @@ async function showAssetMovements() {
 // ---- VERIFICAR EXISTENCIA (QR / conteo) ----
 async function verifyAssetPresence() {
     const id = detailAssetId();
-    const res = await fetch('/api/lifecycle/inventory/verify', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({asset_id: parseInt(id)})});
+    const res = await fetch('/api/inventory/count', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({asset_id: parseInt(id), method: 'qr'})});
     const d = await res.json();
     const el = document.getElementById('assetVerifyResult');
-    el.innerHTML = d.success
-        ? `<span style="color:#166534;font-weight:600;"><i class="fas fa-check-circle"></i> ${d.message}</span>`
-        : `<span style="color:#991b1b;">${d.message}</span>`;
+    if (d.success) {
+        beep(true);
+        el.innerHTML = `<span style="color:#166534;font-weight:600;"><i class="fas fa-check-circle"></i> ${d.message}</span>
+            <div style="font-size:13px;color:#64748b;margin-top:4px;">${d.stats.counted} de ${d.stats.total} contados en este inventario</div>`;
+    } else {
+        el.innerHTML = `<span style="color:#991b1b;">${d.message}</span>`;
+    }
 }
 
 // ---- CONFIGURACIÓN: EMPRESA ----
@@ -2511,47 +2517,8 @@ async function reopenPeriod(year, month) {
     if (d.success) loadPeriods();
 }
 
-// ---- CONFIGURACIÓN: INVENTARIO ----
-async function startInventory() {
-    const name = document.getElementById('invName').value.trim();
-    const d = await (await fetch('/api/lifecycle/inventory/sessions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})})).json();
-    if (d.success) { document.getElementById('invScanResult').innerHTML = '<span style="color:#166534;">✓ Conteo iniciado. Ya puedes escanear.</span>'; loadInventoryReport(); }
-}
-async function scanInventory() {
-    const code = document.getElementById('invScan').value.trim();
-    if (!code) return;
-    const d = await (await fetch('/api/lifecycle/inventory/verify', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})})).json();
-    const el = document.getElementById('invScanResult');
-    el.innerHTML = d.success
-        ? `<span style="color:#166534;"><i class="fas fa-check-circle"></i> ${d.asset.code} — ${d.asset.description}: ${d.message}</span>`
-        : `<span style="color:#991b1b;">${d.message}</span>`;
-    document.getElementById('invScan').value = '';
-    document.getElementById('invScan').focus();
-    if (d.success) loadInventoryReport();
-}
-async function loadInventoryReport() {
-    const sessions = await (await fetch('/api/lifecycle/inventory/sessions')).json();
-    const open = (sessions.sessions || []).find(s => s.status === 'open') || (sessions.sessions || [])[0];
-    if (!open) { document.getElementById('invReport').innerHTML = '<p style="color:#666;">Aún no hay conteos.</p>'; return; }
-    const d = await (await fetch(`/api/lifecycle/inventory/sessions/${open.id}/report`)).json();
-    document.getElementById('invReport').innerHTML =
-        `<div style="display:flex;gap:20px;margin-bottom:12px;font-weight:600;">
-            <span>Sesión: ${d.session.name} (${d.session.status})</span>
-            <span style="color:#166534;">Encontrados: ${d.found_count}</span>
-            <span style="color:#991b1b;">Faltantes: ${d.missing_count}</span>
-            <span>Total: ${d.total}</span>
-            ${d.session.status === 'open' ? `<button class="btn" style="padding:4px 10px;background:#b45309;" onclick="closeInventory(${d.session.id})">Cerrar conteo</button>` : ''}
-         </div>
-         ${d.missing_count ? '<details><summary style="cursor:pointer;color:#991b1b;">Ver faltantes (' + d.missing_count + ')</summary><table><thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Depto</th></tr></thead><tbody>' +
-            d.missing.map(a => `<tr><td>${a.code}</td><td>${a.description}</td><td>${a.category}</td><td>${a.department}</td></tr>`).join('') + '</tbody></table></details>' : ''}`;
-}
-async function closeInventory(id) {
-    await fetch(`/api/lifecycle/inventory/sessions/${id}/close`, {method: 'POST'});
-    loadInventoryReport();
-}
-
 function loadConfigPage() {
-    loadCompany(); loadCatConfig(); loadPeriods(); loadInventoryReport();
+    loadCompany(); loadCatConfig(); loadPeriods();
 }
 
 // ---- WIDGETS DEL DASHBOARD ----
@@ -2570,7 +2537,7 @@ async function loadDashboardWidgets() {
     try {
         const [regRes, invRes, perRes] = await Promise.all([
             fetch('/api/lifecycle/reports/register?include_retired=1'),
-            fetch('/api/lifecycle/inventory/sessions'),
+            fetch('/api/inventory/sessions'),
             fetch('/api/lifecycle/periods')
         ]);
         const reg = await regRes.json(), inv = await invRes.json(), per = await perRes.json();
@@ -2579,10 +2546,10 @@ async function loadDashboardWidgets() {
 
         let invHtml = widget('fa-clipboard-check', '#0ea5e9', 'Conteo Físico', 'Sin iniciar', 'Inícialo en Configuración');
         const openSes = (inv.sessions || []).find(s => s.status === 'open') || (inv.sessions || [])[0];
-        if (openSes) {
-            const rep = await (await fetch(`/api/lifecycle/inventory/sessions/${openSes.id}/report`)).json();
+        if (openSes && openSes.stats) {
             invHtml = widget('fa-clipboard-check', '#0ea5e9', 'Conteo Físico',
-                `${rep.found_count}/${rep.total}`, `${rep.missing_count} por verificar · ${openSes.status}`);
+                `${openSes.stats.counted}/${openSes.stats.total}`,
+                `${openSes.stats.missing} por verificar · ${openSes.status === 'open' ? 'abierto' : 'cerrado'}`);
         }
         const closed = (per.periods || []).filter(p => p.is_closed);
         const lastClosed = closed.length ? `${String(closed[0].month).padStart(2,'0')}/${closed[0].year}` : 'Ninguno';
@@ -2605,18 +2572,19 @@ async function loadDashboardExtras() {
                 `<span style="background:${bg};color:${color};border:1px solid ${color}33;border-radius:20px;padding:6px 14px;font-size:13px;"><i class="fas ${icon}"></i> ${text}</span>`;
             const [per, inv, reg] = await Promise.all([
                 fetch('/api/lifecycle/periods').then(r => r.json()),
-                fetch('/api/lifecycle/inventory/sessions').then(r => r.json()),
+                fetch('/api/inventory/sessions').then(r => r.json()),
                 fetch('/api/lifecycle/reports/register').then(r => r.json())
             ]);
             let chips = '';
             if (!(per.periods || []).some(p => p.is_closed))
                 chips += chip('#9a6a12', '#fbf2df', 'fa-lock-open', 'Ningún período contable cerrado aún');
             const open = (inv.sessions || []).find(s => s.status === 'open');
-            if (open) {
-                const rep = await (await fetch(`/api/lifecycle/inventory/sessions/${open.id}/report`)).json();
-                if (rep.missing_count > 0)
-                    chips += chip('#0369a1', '#eef6ff', 'fa-clipboard-check', `Conteo abierto: ${rep.missing_count} activos por verificar`);
-            }
+            if (open && open.stats && open.stats.missing > 0)
+                chips += chip('#0369a1', '#eef6ff', 'fa-clipboard-check',
+                    `Conteo abierto: ${open.stats.missing} activos por verificar`);
+            if (open && open.stats && open.stats.discrepancies > 0)
+                chips += chip('#9a3412', '#fff7ed', 'fa-triangle-exclamation',
+                    `${open.stats.discrepancies} diferencias detectadas en el conteo`);
             const nearFull = (reg.rows || []).filter(r => r.cost > 0 && r.accumulated / r.cost >= 0.85).length;
             if (nearFull > 0)
                 chips += chip('#b45309', '#fff7ed', 'fa-hourglass-end', `${nearFull} activos por completar su depreciación`);
@@ -2694,6 +2662,357 @@ async function reportTaxVsBook() {
         <table><thead><tr><th>Categoría</th><th>Base</th><th>Tasa NIIF</th><th>Tasa Fiscal</th><th>Deprec. Contable</th><th>Deprec. Fiscal</th><th>Diferencia</th></tr></thead><tbody>` +
         d.rows.map(r => `<tr><td>${r.category}</td><td>${fmtRD(r.base)}</td><td>${r.book_rate}%</td><td>${r.tax_rate}%</td><td>${fmtRD(r.book_annual)}</td><td>${fmtRD(r.tax_annual)}</td><td>${fmtRD(r.difference)}</td></tr>`).join('') +
         `<tr style="font-weight:700;background:#f1f5f9;"><td colspan="4">TOTAL</td><td>${fmtRD(d.totals.book)}</td><td>${fmtRD(d.totals.tax)}</td><td>${fmtRD(d.totals.difference)}</td></tr></tbody></table>`;
+}
+
+// ═══════════════════ MÓDULO DE INVENTARIO FÍSICO (QR) ═══════════════════
+let invSession = null, invReportData = null, invCurrentTab = 'counted', qrScanner = null;
+
+function beep(ok = true) {
+    try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = ok ? 880 : 240;
+        g.gain.setValueAtTime(.15, ctx.currentTime);
+        g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + .25);
+        o.start(); o.stop(ctx.currentTime + .25);
+    } catch (e) { /* sin sonido */ }
+}
+
+async function loadInventoryPage() {
+    const d = await (await fetch('/api/inventory/sessions/open')).json();
+    invSession = d.session;
+    document.getElementById('invNoSession').style.display = invSession ? 'none' : 'block';
+    document.getElementById('invActive').style.display = invSession ? 'block' : 'none';
+    if (invSession) {
+        document.getElementById('invSessName').textContent = invSession.name;
+        document.getElementById('invSessScope').textContent = invSession.scope_label;
+        renderInvStats(invSession.stats);
+        await loadInvReport();
+    }
+    await loadInvHistory();
+    // Respetar permisos: los botones admin-only ya se ocultan al iniciar sesión
+    if (currentUser && currentUser.role !== 'admin') {
+        document.querySelectorAll('#inventory-page .admin-only').forEach(el => el.style.display = 'none');
+    }
+}
+
+function renderInvStats(s) {
+    if (!s) return;
+    document.getElementById('invStatCounted').textContent = s.counted;
+    document.getElementById('invStatMissing').textContent = s.missing;
+    document.getElementById('invStatDiff').textContent = s.discrepancies;
+    document.getElementById('invStatExtra').textContent = s.unregistered;
+    document.getElementById('invProgressText').textContent = `${s.counted} de ${s.total} contados`;
+    document.getElementById('invProgressPct').textContent = s.progress + '%';
+    document.getElementById('invProgressBar').style.width = Math.min(100, s.progress) + '%';
+}
+
+// ---- Sesiones ----
+async function openNewSessionModal() {
+    const [dRes, cRes] = await Promise.all([fetch('/api/departments'), fetch('/api/categories')]);
+    const dData = await dRes.json(), cData = await cRes.json();
+    document.getElementById('nsDept').innerHTML = '<option value="">— Todos —</option>' +
+        (dData.departments || []).map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+    document.getElementById('nsCat').innerHTML = '<option value="">— Todas —</option>' +
+        (cData.categories || []).map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+    document.getElementById('nsName').value = `Inventario ${new Date().toLocaleDateString('es-DO')}`;
+    document.getElementById('newSessionModal').classList.add('active');
+}
+
+async function createInvSession(e) {
+    e.preventDefault();
+    const body = {
+        name: document.getElementById('nsName').value.trim(),
+        scope_department_id: document.getElementById('nsDept').value || null,
+        scope_category_id: document.getElementById('nsCat').value || null,
+        notes: document.getElementById('nsNotes').value
+    };
+    const d = await (await fetch('/api/inventory/sessions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+    if (d.success) {
+        document.getElementById('newSessionModal').classList.remove('active');
+        await loadInventoryPage();
+    } else alert('Error: ' + d.message);
+}
+
+async function closeInvSession() {
+    if (!invSession || !confirm('¿Cerrar este conteo? Ya no se podrán registrar más activos.')) return;
+    const d = await (await fetch(`/api/inventory/sessions/${invSession.id}/close`, {method: 'POST'})).json();
+    if (d.success) await loadInventoryPage(); else alert(d.message);
+}
+
+async function reopenInvSession(id) {
+    if (!confirm('¿Reabrir este conteo? Se cerrará cualquier otro conteo abierto.')) return;
+    const d = await (await fetch(`/api/inventory/sessions/${id}/reopen`, {method: 'POST'})).json();
+    if (d.success) await loadInventoryPage(); else alert(d.message);
+}
+
+// ---- Escáner por cámara ----
+async function openScanner() {
+    const overlay = document.getElementById('scannerOverlay');
+    const feedback = document.getElementById('scannerFeedback');
+    if (typeof Html5Qrcode === 'undefined') {
+        alert('No se pudo cargar el lector de QR (revisa la conexión a internet).\nPuedes escribir el código manualmente.');
+        return;
+    }
+    overlay.style.display = 'flex';
+    feedback.innerHTML = 'Iniciando cámara...';
+    try {
+        qrScanner = new Html5Qrcode('qrReader', {verbose: false});
+        await qrScanner.start({facingMode: 'environment'}, {fps: 10, qrbox: {width: 250, height: 250}},
+            async (text) => {
+                // Evitar re-lecturas del mismo código en ráfaga
+                if (openScanner._last === text && Date.now() - (openScanner._lastAt || 0) < 2500) return;
+                openScanner._last = text; openScanner._lastAt = Date.now();
+                await handleScan(text);
+            }, () => { /* frames sin QR: ignorar */ });
+        feedback.innerHTML = 'Cámara lista. Escanea los códigos QR uno tras otro.';
+    } catch (err) {
+        feedback.innerHTML = `<span style="color:#fca5a5;">No se pudo abrir la cámara: ${err}.
+            Verifica que diste permiso y que la página esté en HTTPS.</span>`;
+    }
+}
+
+async function closeScanner() {
+    try { if (qrScanner) { await qrScanner.stop(); qrScanner.clear(); } } catch (e) { /* ya detenido */ }
+    qrScanner = null;
+    document.getElementById('scannerOverlay').style.display = 'none';
+    await loadInvReport();
+}
+
+async function handleScan(text) {
+    const feedback = document.getElementById('scannerFeedback');
+    const fast = document.getElementById('invFastMode')?.checked;
+    if (fast) {
+        const d = await (await fetch('/api/inventory/count', {method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({code: text, method: 'qr'})})).json();
+        beep(d.success);
+        if (d.success) {
+            renderInvStats(d.stats);
+            feedback.innerHTML = `<span style="color:#86efac;">✓ ${d.asset.code} — ${d.asset.description}</span>
+                ${d.has_discrepancy ? '<br><span style="color:#fdba74;">⚠ ' + d.discrepancies.join(' · ') + '</span>' : ''}
+                <br><span style="opacity:.7;font-size:13px;">${d.stats.counted} de ${d.stats.total} contados</span>`;
+        } else {
+            feedback.innerHTML = `<span style="color:#fca5a5;">✗ ${d.message}</span>`;
+        }
+    } else {
+        beep(true);
+        await closeScanner();
+        await lookupCode(text);
+    }
+}
+
+// ---- Buscar y confirmar el conteo ----
+async function lookupCode(code) {
+    if (!code || !code.trim()) return;
+    const card = document.getElementById('invScanCard');
+    card.style.display = 'block';
+    card.innerHTML = '<div style="background:white;border-radius:10px;padding:16px;">Buscando...</div>';
+    const d = await (await fetch(`/api/inventory/lookup?code=${encodeURIComponent(code.trim())}`)).json();
+    document.getElementById('invManualCode').value = '';
+
+    if (!d.success) {
+        beep(false);
+        card.innerHTML = `<div style="background:#fef2f2;border:1px solid #dc2626;border-radius:10px;padding:16px;">
+            <b style="color:#991b1b;">✗ ${d.message}</b>
+            <div style="font-size:13px;color:#666;margin:8px 0;">Código leído: <code>${code}</code></div>
+            <button class="btn" style="background:#8b5cf6;" onclick="openUnregModal('${String(code).replace(/'/g, "")}')">
+                <i class="fas fa-plus"></i> Registrar como hallazgo sin registrar</button></div>`;
+        return;
+    }
+
+    const a = d.asset;
+    const [dRes, lRes] = await Promise.all([fetch('/api/departments'), fetch('/api/locations')]);
+    const depts = (await dRes.json()).departments || [], locs = (await lRes.json()).locations || [];
+    const opt = (arr, sel) => arr.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${x.name}</option>`).join('');
+    const cond = (v, sel) => `<option value="${v}" ${v === sel ? 'selected' : ''}>`;
+
+    card.innerHTML = `
+    <div style="background:white;border:2px solid #10B981;border-radius:10px;padding:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap;">
+            <div>
+                <div style="font-size:18px;font-weight:700;color:#003D7A;">${a.code}</div>
+                <div style="font-size:15px;">${a.description}</div>
+                <div style="font-size:13px;color:#64748b;margin-top:4px;">
+                    ${a.category || '-'} · ${a.brand || ''} ${a.model || ''} ${a.plate_number ? '· Placa ' + a.plate_number : ''}
+                </div>
+            </div>
+            ${a.status !== 'active' ? '<span style="background:#fef2f2;color:#991b1b;padding:4px 10px;border-radius:12px;font-size:12px;">Estado: ' + a.status + '</span>' : ''}
+        </div>
+        ${d.already_counted ? `<div style="background:#eef6ff;border:1px solid #0ea5e9;border-radius:6px;padding:9px;margin-top:10px;font-size:13px;color:#0369a1;">
+            <i class="fas fa-info-circle"></i> Ya fue contado en esta sesión (${new Date(d.already_counted.counted_at).toLocaleString('es-DO')}). Puedes corregir los datos.</div>` : ''}
+        <div style="background:#f8fafc;border-radius:8px;padding:12px;margin-top:12px;font-size:13px;">
+            <b>Según el sistema:</b> Depto <b>${a.department || '—'}</b> · Localidad <b>${a.location || '—'}</b> · Condición <b>${a.condition_label || '—'}</b>
+        </div>
+        <div style="margin-top:14px;font-weight:600;font-size:14px;color:#003D7A;">¿Dónde y cómo lo encontraste?</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:8px;">
+            <div><label style="font-size:13px;color:#555;">Departamento</label>
+                <select id="cfDept" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;">
+                    <option value="">— Sin especificar —</option>${opt(depts, a.department_id)}</select></div>
+            <div><label style="font-size:13px;color:#555;">Localidad</label>
+                <select id="cfLoc" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;">
+                    <option value="">— Sin especificar —</option>${opt(locs, a.location_id)}</select></div>
+            <div><label style="font-size:13px;color:#555;">Condición física</label>
+                <select id="cfCond" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;">
+                    ${cond('good', a.condition)}Bueno</option>${cond('fair', a.condition)}Regular</option>${cond('poor', a.condition)}Malo</option></select></div>
+        </div>
+        <div style="margin-top:10px;"><label style="font-size:13px;color:#555;">Observaciones</label>
+            <input type="text" id="cfObs" placeholder="Opcional" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;"></div>
+        <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+            <button class="btn" style="background:#10B981;flex:1;min-width:150px;padding:14px;font-size:16px;" onclick="confirmCount(${a.id})">
+                <i class="fas fa-check"></i> Confirmar conteo</button>
+            <button class="btn" style="background:#64748b;" onclick="document.getElementById('invScanCard').style.display='none'">Cancelar</button>
+            <button class="btn" style="background:#0ea5e9;" onclick="openScanner()"><i class="fas fa-qrcode"></i> Escanear otro</button>
+        </div>
+    </div>`;
+}
+
+async function confirmCount(assetId) {
+    const body = {
+        asset_id: assetId,
+        found_department_id: document.getElementById('cfDept').value || null,
+        found_location_id: document.getElementById('cfLoc').value || null,
+        found_condition: document.getElementById('cfCond').value,
+        observations: document.getElementById('cfObs').value,
+        method: 'qr'
+    };
+    const d = await (await fetch('/api/inventory/count', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+    beep(d.success);
+    const card = document.getElementById('invScanCard');
+    if (d.success) {
+        renderInvStats(d.stats);
+        card.innerHTML = `<div style="background:#f0fdf4;border:1px solid #10B981;border-radius:10px;padding:16px;">
+            <b style="color:#166534;">✓ ${d.asset.code} registrado</b>
+            ${d.has_discrepancy ? '<div style="color:#9a3412;margin-top:8px;font-size:14px;">⚠ Diferencia detectada:<br>' + d.discrepancies.join('<br>') + '</div>' : ''}
+            <div style="margin-top:12px;"><button class="btn" style="background:#0ea5e9;" onclick="openScanner()">
+                <i class="fas fa-qrcode"></i> Escanear el siguiente</button></div></div>`;
+        await loadInvReport();
+    } else alert('Error: ' + d.message);
+}
+
+// ---- Activo no registrado ----
+async function openUnregModal(code) {
+    const dData = await (await fetch('/api/departments')).json();
+    document.getElementById('urDept').innerHTML = '<option value="">— Sin especificar —</option>' +
+        (dData.departments || []).map(x => `<option value="${x.id}">${x.name}</option>`).join('');
+    document.getElementById('urCode').value = code || '';
+    document.getElementById('urDesc').value = '';
+    document.getElementById('urNotes').value = '';
+    document.getElementById('unregModal').classList.add('active');
+}
+
+async function submitUnregistered(e) {
+    e.preventDefault();
+    const body = {
+        description: document.getElementById('urDesc').value,
+        scanned_code: document.getElementById('urCode').value,
+        department_id: document.getElementById('urDept').value || null,
+        observations: document.getElementById('urNotes').value
+    };
+    const d = await (await fetch(`/api/inventory/sessions/${invSession.id}/unregistered`, {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})).json();
+    if (d.success) {
+        document.getElementById('unregModal').classList.remove('active');
+        document.getElementById('invScanCard').style.display = 'none';
+        renderInvStats(d.stats);
+        await loadInvReport();
+    } else alert(d.message);
+}
+
+// ---- Listados ----
+async function loadInvReport() {
+    if (!invSession) return;
+    invReportData = await (await fetch(`/api/inventory/sessions/${invSession.id}/report`)).json();
+    if (invReportData.session) renderInvStats(invReportData.session.stats);
+    invTab(invCurrentTab);
+}
+
+function invTab(tab) {
+    invCurrentTab = tab;
+    document.querySelectorAll('.inv-tab').forEach(b =>
+        b.style.background = b.dataset.tab === tab ? '#003D7A' : '#64748b');
+    const el = document.getElementById('invTabContent');
+    if (!invReportData) { el.innerHTML = 'Cargando...'; return; }
+    const d = invReportData;
+    const empty = t => `<p style="color:#64748b;padding:10px;">${t}</p>`;
+
+    if (tab === 'counted') {
+        el.innerHTML = d.counted.length === 0 ? empty('Aún no has contado ningún activo.') :
+            `<table><thead><tr><th>Código</th><th>Descripción</th><th>Depto hallado</th><th>Condición</th><th>Contó</th><th>Hora</th><th>Dif.</th><th></th></tr></thead><tbody>` +
+            d.counted.map(c => `<tr${c.has_discrepancy ? ' style="background:#fff7ed;"' : ''}>
+                <td><b>${c.code}</b></td><td>${c.description}</td><td>${c.found_department}</td>
+                <td>${c.found_condition}</td><td>${c.counted_by}</td>
+                <td>${(c.counted_at || '').slice(11, 16)}</td>
+                <td>${c.has_discrepancy ? '<span style="color:#9a3412;" title="' + c.discrepancy_notes + '">⚠</span>' : '✓'}</td>
+                <td><button class="btn admin-only" style="padding:4px 8px;background:#dc2626;" onclick="undoCount(${c.count_id})" title="Deshacer">✕</button></td>
+            </tr>`).join('') + '</tbody></table>';
+    } else if (tab === 'missing') {
+        el.innerHTML = d.missing.length === 0 ? empty('¡No hay faltantes! Todos los activos del alcance fueron encontrados.') :
+            `<table><thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Departamento</th><th>Usuario</th><th>Valor en libros</th><th>Última vez visto</th></tr></thead><tbody>` +
+            d.missing.map(m => `<tr><td><b>${m.code}</b></td><td>${m.description}</td><td>${m.category}</td>
+                <td>${m.department}</td><td>${m.asset_user}</td><td>${fmtRD(m.nbv)}</td>
+                <td>${m.last_verified_at ? m.last_verified_at.slice(0, 10) : 'Nunca'}</td></tr>`).join('') + '</tbody></table>';
+    } else if (tab === 'diff') {
+        el.innerHTML = d.discrepancies.length === 0 ? empty('Sin diferencias: todo coincide con el sistema.') :
+            `<table><thead><tr><th>Código</th><th>Descripción</th><th>Diferencia detectada</th><th>Observaciones</th></tr></thead><tbody>` +
+            d.discrepancies.map(c => `<tr><td><b>${c.code}</b></td><td>${c.description}</td>
+                <td style="color:#9a3412;">${c.discrepancy_notes}</td><td>${c.observations}</td></tr>`).join('') + '</tbody></table>';
+    } else {
+        el.innerHTML = `<button class="btn" style="background:#8b5cf6;margin-bottom:12px;" onclick="openUnregModal('')">
+                <i class="fas fa-plus"></i> Agregar hallazgo</button>` +
+            (d.unregistered.length === 0 ? empty('No se registraron activos fuera del sistema.') :
+            `<table><thead><tr><th>Descripción</th><th>Código</th><th>Departamento</th><th>Observaciones</th><th></th></tr></thead><tbody>` +
+            d.unregistered.map(u => `<tr><td><b>${u.description}</b></td><td>${u.scanned_code}</td><td>${u.department}</td>
+                <td>${u.observations}</td>
+                <td><button class="btn admin-only" style="padding:4px 8px;background:#dc2626;" onclick="deleteUnreg(${u.id})">✕</button></td>
+            </tr>`).join('') + '</tbody></table>');
+    }
+    if (currentUser && currentUser.role !== 'admin') {
+        el.querySelectorAll('.admin-only').forEach(b => b.style.display = 'none');
+    }
+}
+
+async function undoCount(id) {
+    if (!confirm('¿Deshacer este conteo?')) return;
+    const d = await (await fetch(`/api/inventory/count/${id}`, {method: 'DELETE'})).json();
+    if (d.success) { renderInvStats(d.stats); await loadInvReport(); } else alert(d.message);
+}
+
+async function deleteUnreg(id) {
+    const d = await (await fetch(`/api/inventory/unregistered/${id}`, {method: 'DELETE'})).json();
+    if (d.success) await loadInvReport(); else alert(d.message);
+}
+
+async function applyFindings() {
+    if (!invSession) return;
+    if (!confirm('Se actualizará el maestro de activos (departamento, localidad y condición) con lo hallado en el conteo.\n\n¿Continuar?')) return;
+    const d = await (await fetch(`/api/inventory/sessions/${invSession.id}/apply`, {method: 'POST'})).json();
+    alert(d.success ? `✓ ${d.message}` : 'Error: ' + d.message);
+    if (d.success) { await loadAssets(); await loadInventoryPage(); }
+}
+
+function downloadInvReport() {
+    if (invSession) window.open(`/api/inventory/sessions/${invSession.id}/report?format=xlsx`);
+}
+
+async function loadInvHistory() {
+    const d = await (await fetch('/api/inventory/sessions')).json();
+    const el = document.getElementById('invHistory');
+    const rows = (d.sessions || []);
+    if (rows.length === 0) { el.innerHTML = '<p style="color:#64748b;">Aún no se ha hecho ningún conteo.</p>'; return; }
+    el.innerHTML = `<table><thead><tr><th>Conteo</th><th>Alcance</th><th>Estado</th><th>Contados</th><th>Faltantes</th><th>Dif.</th><th>Inicio</th><th></th></tr></thead><tbody>` +
+        rows.map(s => `<tr>
+            <td><b>${s.name}</b></td><td style="font-size:13px;">${s.scope_label}</td>
+            <td>${s.status === 'open' ? '<span style="color:#166534;">● Abierto</span>' : '<span style="color:#64748b;">Cerrado</span>'}</td>
+            <td>${s.stats.counted}/${s.stats.total}</td><td>${s.stats.missing}</td><td>${s.stats.discrepancies}</td>
+            <td>${(s.started_at || '').slice(0, 10)}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn" style="padding:4px 8px;" onclick="window.open('/api/inventory/sessions/${s.id}/report?format=xlsx')" title="Excel"><i class="fas fa-file-excel"></i></button>
+                ${s.status === 'closed' ? `<button class="btn admin-only" style="padding:4px 8px;background:#475569;" onclick="reopenInvSession(${s.id})">Reabrir</button>` : ''}
+            </td></tr>`).join('') + '</tbody></table>';
+    if (currentUser && currentUser.role !== 'admin') {
+        el.querySelectorAll('.admin-only').forEach(b => b.style.display = 'none');
+    }
 }
 
 console.log('✓ App script loaded');

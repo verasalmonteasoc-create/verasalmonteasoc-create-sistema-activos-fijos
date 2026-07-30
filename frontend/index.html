@@ -6,6 +6,8 @@
     <title>Sistema de Gestión de Activos Fijos</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <!-- Escáner de QR por cámara (para el conteo físico desde el celular) -->
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; }
@@ -163,6 +165,7 @@
                 <a href="#" data-page="departments" class="nav-link"><i class="fas fa-building"></i> Departamentos</a>
                 <a href="#" data-page="locations" class="nav-link"><i class="fas fa-map-marker-alt"></i> Localidades</a>
                 <a href="#" data-page="assets" class="nav-link"><i class="fas fa-list"></i> Activos</a>
+                <a href="#" data-page="inventory" class="nav-link"><i class="fas fa-clipboard-check"></i> Inventario Físico</a>
                 <a href="#" data-page="reports" class="nav-link"><i class="fas fa-file-excel"></i> Reportes</a>
                 <a href="#" data-page="config" class="nav-link admin-only"><i class="fas fa-cog"></i> Configuración</a>
                 <a href="#" data-page="users" class="nav-link admin-only"><i class="fas fa-users"></i> Usuarios</a>
@@ -583,6 +586,93 @@
                     </div>
                 </div>
 
+                <div id="inventory-page" class="page">
+                    <h2>Inventario Físico de Activos</h2>
+
+                    <!-- Estado del conteo -->
+                    <div id="invNoSession" style="display:none;background:#fff7ed;border:1px solid #f97316;border-radius:10px;padding:20px;">
+                        <h3 style="margin:0 0 8px;color:#9a3412;"><i class="fas fa-exclamation-circle"></i> No hay un conteo abierto</h3>
+                        <p style="font-size:14px;color:#666;margin-bottom:14px;">Crea una sesión de conteo para empezar a escanear activos.</p>
+                        <button class="btn admin-only" onclick="openNewSessionModal()"><i class="fas fa-plus"></i> Nuevo conteo</button>
+                    </div>
+
+                    <div id="invActive" style="display:none;">
+                        <!-- Cabecera de la sesión -->
+                        <div style="background:linear-gradient(135deg,#003D7A,#0051a8);color:white;border-radius:10px;padding:18px;margin-bottom:16px;">
+                            <div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:10px;">
+                                <div>
+                                    <div style="font-size:19px;font-weight:700;" id="invSessName">—</div>
+                                    <div style="font-size:13px;opacity:.85;" id="invSessScope">—</div>
+                                </div>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                    <button class="btn" style="background:rgba(255,255,255,.2);" onclick="openNewSessionModal()"><i class="fas fa-plus"></i> Nuevo</button>
+                                    <button class="btn" style="background:rgba(255,255,255,.2);" onclick="downloadInvReport()"><i class="fas fa-file-excel"></i> Excel</button>
+                                    <button class="btn admin-only" style="background:#b45309;" onclick="closeInvSession()"><i class="fas fa-lock"></i> Cerrar</button>
+                                </div>
+                            </div>
+                            <!-- Progreso -->
+                            <div style="margin-top:14px;">
+                                <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;">
+                                    <span id="invProgressText">0 de 0 contados</span><span id="invProgressPct">0%</span>
+                                </div>
+                                <div style="background:rgba(255,255,255,.25);border-radius:6px;height:10px;overflow:hidden;">
+                                    <div id="invProgressBar" style="background:#10B981;height:100%;width:0%;transition:width .4s;"></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Contadores -->
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px;">
+                            <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.07);border-top:3px solid #10B981;">
+                                <div style="font-size:24px;font-weight:700;color:#166534;" id="invStatCounted">0</div>
+                                <div style="font-size:12px;color:#64748b;">Encontrados</div></div>
+                            <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.07);border-top:3px solid #dc2626;">
+                                <div style="font-size:24px;font-weight:700;color:#991b1b;" id="invStatMissing">0</div>
+                                <div style="font-size:12px;color:#64748b;">Faltantes</div></div>
+                            <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.07);border-top:3px solid #F97316;">
+                                <div style="font-size:24px;font-weight:700;color:#9a3412;" id="invStatDiff">0</div>
+                                <div style="font-size:12px;color:#64748b;">Con diferencia</div></div>
+                            <div style="background:white;border-radius:8px;padding:12px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.07);border-top:3px solid #8b5cf6;">
+                                <div style="font-size:24px;font-weight:700;color:#6d28d9;" id="invStatExtra">0</div>
+                                <div style="font-size:12px;color:#64748b;">Sin registrar</div></div>
+                        </div>
+
+                        <!-- Captura -->
+                        <div style="background:white;border-radius:10px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.08);margin-bottom:16px;">
+                            <button class="btn" onclick="openScanner()" style="width:100%;background:#0ea5e9;font-size:17px;padding:16px;">
+                                <i class="fas fa-qrcode"></i> Escanear QR con la cámara
+                            </button>
+                            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                                <input type="text" id="invManualCode" placeholder="O escribe el código: VEH-001"
+                                    onkeydown="if(event.key==='Enter')lookupCode(this.value)"
+                                    style="flex:1;min-width:180px;padding:12px;border:1px solid #ddd;border-radius:6px;font-size:15px;">
+                                <button class="btn" onclick="lookupCode(document.getElementById('invManualCode').value)"><i class="fas fa-search"></i> Buscar</button>
+                            </div>
+                            <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px;color:#555;cursor:pointer;">
+                                <input type="checkbox" id="invFastMode" style="width:18px;height:18px;">
+                                Modo rápido — registrar al escanear sin pedir confirmación
+                            </label>
+                        </div>
+
+                        <!-- Resultado del escaneo -->
+                        <div id="invScanCard" style="display:none;margin-bottom:16px;"></div>
+
+                        <!-- Listados -->
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+                            <button class="btn inv-tab" data-tab="counted" onclick="invTab('counted')">Encontrados</button>
+                            <button class="btn inv-tab" data-tab="missing" onclick="invTab('missing')" style="background:#64748b;">Faltantes</button>
+                            <button class="btn inv-tab" data-tab="diff" onclick="invTab('diff')" style="background:#64748b;">Diferencias</button>
+                            <button class="btn inv-tab" data-tab="extra" onclick="invTab('extra')" style="background:#64748b;">Sin registrar</button>
+                            <button class="btn admin-only" onclick="applyFindings()" style="background:#6366f1;margin-left:auto;"><i class="fas fa-wand-magic-sparkles"></i> Aplicar hallazgos</button>
+                        </div>
+                        <div id="invTabContent" style="overflow-x:auto;background:white;border-radius:8px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,.06);"></div>
+                    </div>
+
+                    <!-- Historial de conteos -->
+                    <h3 style="margin-top:30px;color:#003D7A;font-size:16px;">Conteos anteriores</h3>
+                    <div id="invHistory" style="overflow-x:auto;"></div>
+                </div>
+
                 <div id="config-page" class="page">
                     <h2>Configuración - Carga de Datos</h2>
                     <p style="color: #666; margin-bottom: 25px;">Sube aquí los archivos Excel que alimentan la aplicación.</p>
@@ -681,21 +771,13 @@
                         <div id="periodsList" style="overflow-x:auto;"></div>
                     </div>
 
-                    <!-- Conteo físico / inventario -->
+                    <!-- Conteo físico → ahora tiene su propio módulo -->
                     <div style="background:white;border-left:4px solid #0ea5e9;padding:25px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.1);margin-top:25px;">
                         <h3 style="color:#003D7A;margin-top:0;"><i class="fas fa-clipboard-check"></i> Conteo Físico (Inventario con QR)</h3>
-                        <p style="font-size:13px;color:#666;">Inicia una sesión de conteo; luego escanea el QR de cada activo (o escribe su código) para marcarlo como encontrado.</p>
-                        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:15px;">
-                            <div><label style="font-size:13px;">Nombre del conteo</label><input type="text" id="invName" placeholder="Conteo físico 2026" style="width:220px;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
-                            <button class="btn" style="background:#0ea5e9;" onclick="startInventory()"><i class="fas fa-play"></i> Iniciar conteo</button>
-                        </div>
-                        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:15px;">
-                            <div><label style="font-size:13px;">Escanear / escribir código</label><input type="text" id="invScan" placeholder="VEH-001" onkeydown="if(event.key==='Enter')scanInventory()" style="width:220px;padding:9px;border:1px solid #ddd;border-radius:5px;"></div>
-                            <button class="btn" onclick="scanInventory()"><i class="fas fa-check"></i> Marcar</button>
-                            <button class="btn" style="background:#475569;" onclick="loadInventoryReport()"><i class="fas fa-sync"></i> Ver avance</button>
-                        </div>
-                        <div id="invScanResult" style="font-size:14px;margin-bottom:12px;"></div>
-                        <div id="invReport" style="overflow-x:auto;"></div>
+                        <p style="font-size:13px;color:#666;margin-bottom:14px;">El inventario físico tiene su propio módulo, con escaneo de QR desde el celular, detección de diferencias y reporte en Excel.</p>
+                        <button class="btn" style="background:#0ea5e9;" onclick="document.querySelector('[data-page=inventory]').click()">
+                            <i class="fas fa-arrow-right"></i> Ir a Inventario Físico
+                        </button>
                     </div>
                 </div>
 
@@ -1349,6 +1431,58 @@
         </div>
     </div>
 
+    <!-- Overlay del escáner de QR (pantalla completa, pensado para el celular) -->
+    <div id="scannerOverlay" style="display:none;position:fixed;inset:0;z-index:10000;background:#000;flex-direction:column;">
+        <div style="background:#003D7A;color:white;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;">
+            <div><div style="font-weight:700;">Escanear activo</div>
+                 <div style="font-size:12px;opacity:.8;" id="scannerHint">Apunta la cámara al código QR</div></div>
+            <button onclick="closeScanner()" style="background:rgba(255,255,255,.2);color:white;border:none;border-radius:6px;padding:10px 16px;font-size:15px;cursor:pointer;">
+                <i class="fas fa-times"></i> Cerrar</button>
+        </div>
+        <div id="qrReader" style="flex:1;width:100%;max-width:640px;margin:0 auto;"></div>
+        <div id="scannerFeedback" style="background:#0f172a;color:white;padding:14px 16px;min-height:64px;font-size:15px;"></div>
+    </div>
+
+    <!-- Modal Nuevo conteo -->
+    <div id="newSessionModal" class="modal">
+        <div class="modal-content" style="max-width:480px;">
+            <span class="close" onclick="document.getElementById('newSessionModal').classList.remove('active')">&times;</span>
+            <h2>Nuevo conteo físico</h2>
+            <form onsubmit="createInvSession(event)">
+                <div class="form-group"><label>Nombre del conteo *</label>
+                    <input type="text" id="nsName" required placeholder="Ej: Inventario anual 2026"></div>
+                <p style="font-size:13px;color:#666;">Opcional: limita el conteo a un departamento o categoría para repartir el trabajo entre varias personas.</p>
+                <div class="form-group"><label>Solo este departamento</label>
+                    <select id="nsDept"><option value="">— Todos —</option></select></div>
+                <div class="form-group"><label>Solo esta categoría</label>
+                    <select id="nsCat"><option value="">— Todas —</option></select></div>
+                <div class="form-group"><label>Notas</label><input type="text" id="nsNotes"></div>
+                <div style="background:#fff7ed;border:1px solid #f97316;border-radius:6px;padding:10px;font-size:13px;color:#9a3412;margin-bottom:14px;">
+                    <i class="fas fa-info-circle"></i> Si hay otro conteo abierto, se cerrará automáticamente.
+                </div>
+                <button type="submit" class="btn"><i class="fas fa-play"></i> Iniciar conteo</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal activo no registrado -->
+    <div id="unregModal" class="modal">
+        <div class="modal-content" style="max-width:460px;">
+            <span class="close" onclick="document.getElementById('unregModal').classList.remove('active')">&times;</span>
+            <h2>Activo hallado sin registrar</h2>
+            <p style="font-size:13px;color:#666;">Encontraste un activo físico que no está en el sistema. Regístralo aquí para revisarlo después.</p>
+            <form onsubmit="submitUnregistered(event)">
+                <div class="form-group"><label>Descripción *</label>
+                    <input type="text" id="urDesc" required placeholder="Ej: Laptop Dell sin placa"></div>
+                <div class="form-group"><label>Código escaneado / visible</label><input type="text" id="urCode"></div>
+                <div class="form-group"><label>Departamento donde está</label>
+                    <select id="urDept"><option value="">— Sin especificar —</option></select></div>
+                <div class="form-group"><label>Observaciones</label><input type="text" id="urNotes"></div>
+                <button type="submit" class="btn" style="background:#8b5cf6;"><i class="fas fa-save"></i> Registrar hallazgo</button>
+            </form>
+        </div>
+    </div>
+
     <!-- Modal Dar de baja -->
     <div id="retireModal" class="modal">
         <div class="modal-content" style="max-width: 520px;">
@@ -1434,6 +1568,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=30"></script>
+    <script src="js/app.js?v=31"></script>
 </body>
 </html>

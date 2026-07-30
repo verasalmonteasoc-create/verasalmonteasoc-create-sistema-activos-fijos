@@ -62,6 +62,10 @@ def create_app(config=None):
                 "ALTER TABLE assets ADD COLUMN IF NOT EXISTS disposal_gain_loss NUMERIC(12,2)",
                 "ALTER TABLE assets ADD COLUMN IF NOT EXISTS last_verified_at TIMESTAMP",
                 "ALTER TABLE assets ADD COLUMN IF NOT EXISTS last_verified_session_id INTEGER",
+                "ALTER TABLE inventory_sessions ADD COLUMN IF NOT EXISTS scope_department_id INTEGER",
+                "ALTER TABLE inventory_sessions ADD COLUMN IF NOT EXISTS scope_category_id INTEGER",
+                "ALTER TABLE inventory_sessions ADD COLUMN IF NOT EXISTS notes TEXT",
+                "ALTER TABLE inventory_sessions ADD COLUMN IF NOT EXISTS applied_at TIMESTAMP",
                 "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS reference VARCHAR(50)",
                 "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS entry_type VARCHAR(50) DEFAULT 'general'",
                 "ALTER TABLE journal_entries ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft'",
@@ -192,6 +196,7 @@ def register_blueprints(app):
     from backend.routes.depreciation import depreciation_bp
     from backend.routes.lifecycle import lifecycle_bp
     from backend.routes.settings import settings_bp
+    from backend.routes.inventory import inventory_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
@@ -203,6 +208,7 @@ def register_blueprints(app):
     app.register_blueprint(depreciation_bp)
     app.register_blueprint(lifecycle_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(inventory_bp)
 
 
 # Crear aplicación
