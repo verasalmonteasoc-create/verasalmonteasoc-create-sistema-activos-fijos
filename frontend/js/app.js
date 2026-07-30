@@ -185,12 +185,9 @@ function initApp() {
     document.getElementById('assetFilter').addEventListener('change', loadDashboard);
     document.getElementById('departmentFilter').addEventListener('change', loadDashboard);
 
-    // Si se accede vía QR (?asset_id=123), abrir el detalle en modo visualización
-    const urlParams = new URLSearchParams(window.location.search);
-    const qrAssetId = urlParams.get('asset_id');
-    if (qrAssetId) {
-        viewAssetDetails(qrAssetId, true);
-    }
+    // Nota: los códigos QR ya NO abren la aplicación. Apuntan a /activo/<id>,
+    // una ficha pública de solo consulta servida por el backend, para que
+    // escanear un QR nunca dé acceso al sistema.
 
     console.log('✓ Aplicación iniciada');
 }
@@ -1434,17 +1431,11 @@ async function viewAssetDetails(assetId, readOnly = false) {
             return;
         }
 
-        // Modo visualización (acceso vía QR): ocultar acciones de edición y
-        // mostrar el botón de "confirmar existencia" para el conteo físico
+        // Modo solo lectura (opcional): ocultar las acciones de edición
         const detailActions = document.getElementById('assetDetailsActions');
         if (detailActions) {
             detailActions.querySelectorAll('.btn-edit-action, .btn-delete-action, .btn-journal-action')
                 .forEach(btn => btn.style.display = readOnly ? 'none' : '');
-        }
-        const verifyBar = document.getElementById('assetVerifyBar');
-        if (verifyBar) {
-            verifyBar.style.display = readOnly ? 'block' : 'none';
-            document.getElementById('assetVerifyResult').innerHTML = '';
         }
 
         const asset = data.asset;
@@ -2454,21 +2445,6 @@ async function showAssetMovements() {
 }
 
 // ---- VERIFICAR EXISTENCIA (QR / conteo) ----
-async function verifyAssetPresence() {
-    const id = detailAssetId();
-    const res = await fetch('/api/inventory/count', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({asset_id: parseInt(id), method: 'qr'})});
-    const d = await res.json();
-    const el = document.getElementById('assetVerifyResult');
-    if (d.success) {
-        beep(true);
-        el.innerHTML = `<span style="color:#166534;font-weight:600;"><i class="fas fa-check-circle"></i> ${d.message}</span>
-            <div style="font-size:13px;color:#64748b;margin-top:4px;">${d.stats.counted} de ${d.stats.total} contados en este inventario</div>`;
-    } else {
-        el.innerHTML = `<span style="color:#991b1b;">${d.message}</span>`;
-    }
-}
 
 // ---- CONFIGURACIÓN: EMPRESA ----
 async function loadCompany() {

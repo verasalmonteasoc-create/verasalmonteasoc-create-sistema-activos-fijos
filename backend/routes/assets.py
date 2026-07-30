@@ -16,17 +16,19 @@ assets_bp = Blueprint('assets', __name__, url_prefix='/api/assets')
 
 
 def get_asset_qr_url(asset):
-    """Construir la URL pública que abre el detalle del activo en modo visualización.
+    """URL que codifica el QR: la ficha PÚBLICA de solo consulta del activo.
+
+    Apunta a /activo/<id> (no a la aplicación), de modo que escanear un QR
+    muestre únicamente la información del activo y nunca dé acceso al sistema.
 
     Usa APP_BASE_URL si está configurada (obligatorio en producción, ya que
     request.host_url puede resolver a una dirección interna detrás de un
-    proxy/balanceador). Si no está configurada, cae de vuelta a la URL de
-    la petición actual (útil en desarrollo local).
+    proxy/balanceador). Si no, cae a la URL de la petición actual.
     """
     base_url = os.environ.get('APP_BASE_URL', '').strip()
     if not base_url:
         base_url = request.host_url
-    return f"{base_url.rstrip('/')}/?asset_id={asset.id}"
+    return f"{base_url.rstrip('/')}/activo/{asset.id}"
 
 
 def serialize_asset(asset):

@@ -1,7 +1,7 @@
 """
 Aplicación Flask - Sistema de Gestión de Activos Fijos
 """
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect, url_for
 from flask_cors import CORS
 from flask_login import LoginManager
 from sqlalchemy import text
@@ -175,6 +175,12 @@ def create_app(config=None):
     # Servir archivos estáticos
     @app.route('/')
     def index():
+        # Los códigos QR impresos antes apuntaban a "/?asset_id=N", que abría la
+        # aplicación completa. Se redirigen a la ficha pública de solo consulta
+        # para que un QR nunca dé acceso al sistema.
+        asset_id = request.args.get('asset_id', type=int)
+        if asset_id:
+            return redirect(url_for('public.public_asset', asset_id=asset_id), code=301)
         return send_from_directory(app.static_folder, 'index.html')
 
     @app.route('/<path:filename>')
@@ -197,6 +203,7 @@ def register_blueprints(app):
     from backend.routes.lifecycle import lifecycle_bp
     from backend.routes.settings import settings_bp
     from backend.routes.inventory import inventory_bp
+    from backend.routes.public import public_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(assets_bp)
@@ -209,6 +216,7 @@ def register_blueprints(app):
     app.register_blueprint(lifecycle_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(inventory_bp)
+    app.register_blueprint(public_bp)
 
 
 # Crear aplicación
