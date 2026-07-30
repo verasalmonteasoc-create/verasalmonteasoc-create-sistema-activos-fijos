@@ -1098,23 +1098,11 @@ async function loadAssets() {
         const editAssetDeptSelect = document.getElementById('editAssetDepartment');
         const assetDeptSelect = document.getElementById('assetDepartment');
 
-        if (assetsData.success && assetsData.assets.length > 0) {
-            tbody.innerHTML = assetsData.assets.map(asset => `
-                <tr>
-                    <td>${asset.code}</td>
-                    <td>${asset.description}</td>
-                    <td>${asset.category.name}</td>
-                    <td>${asset.department || '-'}</td>
-                    <td>RD$ ${parseFloat(asset.acquisition_cost).toLocaleString('es-DO', {minimumFractionDigits: 2})}</td>
-                    <td>
-                        <button class="btn" onclick="openEditAssetModal(${JSON.stringify(asset).replace(/"/g, '&quot;')})" style="font-size: 12px;">Editar</button>
-                        <button class="btn" onclick="showAssetQR(${asset.id}, '${asset.code}')" style="background: #8B5CF6; font-size: 12px;"><i class="fas fa-qrcode"></i> QR</button>
-                        <button class="btn btn-danger" onclick="deleteAsset(${asset.id})" style="font-size: 12px;">Eliminar</button>
-                    </td>
-                </tr>
-            `).join('');
+        if (assetsData.success) {
+            assetsCache = assetsData.assets || [];
+            renderAssetsView();
         } else {
-            tbody.innerHTML = '<tr><td colspan="6">Sin activos registrados</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7">Sin activos registrados</td></tr>';
         }
 
         if (categoriesData.success) {
@@ -1466,6 +1454,7 @@ async function viewAssetDetails(assetId, readOnly = false) {
         const accumDepreciation = parseFloat(asset.accumulated_depreciation);
         const netValue = parseFloat(asset.net_book_value);
         const deprecPercent = ((accumDepreciation / asset.acquisition_cost) * 100).toFixed(1);
+        renderAssetChrome(asset, deprecPercent);
 
         // Llenar información básica
         document.getElementById('detailCode').textContent = asset.code;
@@ -2702,6 +2691,174 @@ async function reportTaxVsBook() {
         <table><thead><tr><th>Categoría</th><th>Base</th><th>Tasa NIIF</th><th>Tasa Fiscal</th><th>Deprec. Contable</th><th>Deprec. Fiscal</th><th>Diferencia</th></tr></thead><tbody>` +
         d.rows.map(r => `<tr><td>${r.category}</td><td>${fmtRD(r.base)}</td><td>${r.book_rate}%</td><td>${r.tax_rate}%</td><td>${fmtRD(r.book_annual)}</td><td>${fmtRD(r.tax_annual)}</td><td>${fmtRD(r.difference)}</td></tr>`).join('') +
         `<tr style="font-weight:700;background:#f1f5f9;"><td colspan="4">TOTAL</td><td>${fmtRD(d.totals.book)}</td><td>${fmtRD(d.totals.tax)}</td><td>${fmtRD(d.totals.difference)}</td></tr></tbody></table>`;
+}
+
+/* Barra de estado del ciclo de vida + indicadores rápidos en la ficha del activo
+   (patrón de Odoo: statusbar y smart buttons, con la paleta azul del sistema). */
+async function renderAssetChrome(asset, deprecPercent) {
+    const bar = document.getElementById('assetStatusbar');
+    if (bar) {
+        const etapas = [
+            {k: 'active', t: 'Activo'},
+            {k: 'inactive', t: 'Inactivo'},
+            {k: 'retired', t: 'Dado de baja'}
+        ];
+        bar.innerHTML = etapas.map(e => {
+            const actual = e.k === asset.status;
+            return `<span style="padding:6px 16px;border-radius:16px;font-size:13px;font-weight:${actual ? '700' : '400'};
+                background:${actual ? '#003D7A' : '#f1f5f9'};color:${actual ? 'white' : '#94a3b8'};">${e.t}</span>`;
+        }).join('<span style="color:#cbd5e1;align-self:center;">›</span>');
+    }
+
+    const sb = document.getElementById('assetSmartButtons');
+    if (!sb) return;
+    const box = (icon, valor, etiqueta, onclick) => `
+        <button onclick="${onclick || ''}" ${onclick ? '' : 'disabled'}
+            style="background:white;border:1px solid #cbd5e1;border-radius:8px;padding:10px 16px;text-align:left;
+                   cursor:${onclick ? 'pointer' : 'default'};min-width:120px;">
+            <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.03em;">
+                <i class="fas ${icon}"></i> ${etiqueta}</div>
+            <div style="font-size:17px;font-weight:700;color:#003D7A;">${valor}</div>
+        </button>`;
+
+    const verificado = asset.last_verified_at
+        ? new Date(asset.last_verified_at).toLocaleDateString('es-DO') : 'Nunca';
+    sb.innerHTML = box('fa-chart-pie', deprecPercent + '%', 'Depreciado') +
+                   box('fa-clipboard-check', verificado, 'Verificado') +
+                   box('fa-history', '…', 'Movimientos', 'showAssetMovements()');
+
+    // El número de movimientos se consulta aparte para no demorar la apertura
+    try {
+        const mv = await (await fetch(`/api/lifecycle/assets/${asset.id}/movements`)).json();
+        sb.innerHTML = box('fa-chart-pie', deprecPercent + '%', 'Depreciado') +
+                       box('fa-clipboard-check', verificado, 'Verificado') +
+                       box('fa-history', (mv.movements || []).length, 'Movimientos', 'showAssetMovements()');
+    } catch (e) { /* se queda el marcador */ }
+}
+
+// ═══════ VISTAS DE ACTIVOS: lista y tarjetas (kanban), con búsqueda y agrupación ═══════
+let assetsCache = [], assetViewMode = 'list';
+
+const STATUS_META = {
+    active:   {label: 'Activo',        color: '#166534', bg: '#e8f3ec', bar: '#10B981'},
+    inactive: {label: 'Inactivo',      color: '#9a6a12', bg: '#fbf2df', bar: '#F97316'},
+    retired:  {label: 'Dado de baja',  color: '#991b1b', bg: '#fbecea', bar: '#dc2626'}
+};
+const statusMeta = s => STATUS_META[s] || {label: s || '—', color: '#475569', bg: '#f1f5f9', bar: '#94a3b8'};
+const statusBadge = s => {
+    const m = statusMeta(s);
+    return `<span style="background:${m.bg};color:${m.color};padding:3px 10px;border-radius:12px;font-size:12px;white-space:nowrap;">${m.label}</span>`;
+};
+
+function setAssetView(mode) {
+    assetViewMode = mode;
+    const on = '#003D7A', off = '#f1f5f9';
+    document.getElementById('btnViewList').style.background = mode === 'list' ? on : off;
+    document.getElementById('btnViewList').style.color = mode === 'list' ? 'white' : '#475569';
+    document.getElementById('btnViewKanban').style.background = mode === 'kanban' ? on : off;
+    document.getElementById('btnViewKanban').style.color = mode === 'kanban' ? 'white' : '#475569';
+    document.getElementById('assetsListView').style.display = mode === 'list' ? 'block' : 'none';
+    document.getElementById('assetsKanbanView').style.display = mode === 'kanban' ? 'block' : 'none';
+    renderAssetsView();
+}
+
+function renderAssetsView() {
+    const term = (document.getElementById('assetViewSearch')?.value || '').toLowerCase().trim();
+    const groupBy = document.getElementById('assetViewGroup')?.value || '';
+
+    let rows = assetsCache.filter(a => !term ||
+        [a.code, a.description, a.brand, a.model, a.plate_number, a.chassis, a.asset_user]
+            .some(v => (v || '').toString().toLowerCase().includes(term)));
+
+    const counter = document.getElementById('assetViewCount');
+    if (counter) counter.textContent = `${rows.length} de ${assetsCache.length} activos`;
+
+    // Agrupar (o un solo grupo sin título)
+    const groups = new Map();
+    for (const a of rows) {
+        let key = 'Todos';
+        if (groupBy === 'category') key = a.category?.name || 'Sin categoría';
+        else if (groupBy === 'department') key = a.department || 'Sin departamento';
+        else if (groupBy === 'status') key = statusMeta(a.status).label;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(a);
+    }
+    const sorted = [...groups.entries()].sort((x, y) => x[0].localeCompare(y[0]));
+
+    if (assetViewMode === 'list') renderAssetsList(sorted, groupBy, rows.length);
+    else renderAssetsKanban(sorted, groupBy, rows.length);
+}
+
+function renderAssetsList(groups, groupBy, total) {
+    const tbody = document.getElementById('assetsTable');
+    if (!tbody) return;
+    if (total === 0) { tbody.innerHTML = '<tr><td colspan="7">No hay activos que coincidan.</td></tr>'; return; }
+    let html = '';
+    for (const [name, list] of groups) {
+        if (groupBy) html += `<tr style="background:#eef2f7;"><td colspan="7" style="font-weight:700;color:#003D7A;">
+            <i class="fas fa-folder-open"></i> ${name} <span style="color:#64748b;font-weight:400;">(${list.length})</span></td></tr>`;
+        html += list.map(a => `<tr>
+            <td><b>${a.code}</b></td>
+            <td>${a.description}</td>
+            <td>${a.category?.name || '-'}</td>
+            <td>${a.department || '-'}</td>
+            <td>${fmtRD(a.acquisition_cost)}</td>
+            <td>${statusBadge(a.status)}</td>
+            <td style="white-space:nowrap;">
+                <button class="btn" onclick="viewAssetDetails(${a.id})" style="font-size:12px;" title="Ver detalles"><i class="fas fa-eye"></i></button>
+                <button class="btn" onclick='openEditAssetModal(${JSON.stringify(a).replace(/'/g, "&#39;")})' style="font-size:12px;">Editar</button>
+                <button class="btn" onclick="showAssetQR(${a.id}, '${a.code}')" style="background:#8B5CF6;font-size:12px;"><i class="fas fa-qrcode"></i></button>
+                <button class="btn btn-danger" onclick="deleteAsset(${a.id})" style="font-size:12px;">Eliminar</button>
+            </td></tr>`).join('');
+    }
+    tbody.innerHTML = html;
+}
+
+function renderAssetsKanban(groups, groupBy, total) {
+    const cont = document.getElementById('assetsKanbanView');
+    if (!cont) return;
+    if (total === 0) { cont.innerHTML = '<p style="color:#64748b;">No hay activos que coincidan.</p>'; return; }
+
+    const card = a => {
+        const m = statusMeta(a.status);
+        const nbv = a.net_book_value != null ? a.net_book_value : a.acquisition_cost;
+        const pct = a.acquisition_cost > 0
+            ? Math.min(100, Math.round((a.accumulated_depreciation || 0) / a.acquisition_cost * 100)) : 0;
+        return `
+        <div style="background:white;border:1px solid #e2e8f0;border-left:4px solid ${m.bar};border-radius:8px;
+                    padding:14px;display:flex;flex-direction:column;gap:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);">
+            <div style="display:flex;justify-content:space-between;align-items:start;gap:8px;">
+                <div style="font-weight:700;color:#003D7A;">${a.code}</div>
+                ${statusBadge(a.status)}
+            </div>
+            <div style="font-size:14px;line-height:1.35;">${a.description}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                ${a.category?.name ? `<span style="background:#eef2f7;color:#334155;padding:2px 8px;border-radius:10px;font-size:11px;">${a.category.name}</span>` : ''}
+                ${a.department ? `<span style="background:#eef2f7;color:#334155;padding:2px 8px;border-radius:10px;font-size:11px;">${a.department}</span>` : ''}
+                ${a.plate_number ? `<span style="background:#eef2f7;color:#334155;padding:2px 8px;border-radius:10px;font-size:11px;">🚗 ${a.plate_number}</span>` : ''}
+            </div>
+            <div style="font-size:12px;color:#64748b;">
+                Costo <b style="color:#0f172a;">${fmtRD(a.acquisition_cost)}</b> ·
+                En libros <b style="color:#0f172a;">${fmtRD(nbv)}</b>
+            </div>
+            <div title="${pct}% depreciado" style="background:#f1f5f9;border-radius:4px;height:5px;overflow:hidden;">
+                <div style="background:#F97316;height:100%;width:${pct}%;"></div>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:2px;">
+                <button class="btn" onclick="viewAssetDetails(${a.id})" style="font-size:12px;flex:1;"><i class="fas fa-eye"></i> Ver</button>
+                <button class="btn" onclick="showAssetQR(${a.id}, '${a.code}')" style="background:#8B5CF6;font-size:12px;"><i class="fas fa-qrcode"></i></button>
+            </div>
+        </div>`;
+    };
+
+    let html = '';
+    for (const [name, list] of groups) {
+        if (groupBy) html += `<h4 style="color:#003D7A;margin:18px 0 10px;">
+            <i class="fas fa-folder-open"></i> ${name} <span style="color:#64748b;font-weight:400;">(${list.length})</span></h4>`;
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:14px;">
+            ${list.map(card).join('')}</div>`;
+    }
+    cont.innerHTML = html;
 }
 
 // ═══════════════════ MÓDULO DE INVENTARIO FÍSICO (QR) ═══════════════════

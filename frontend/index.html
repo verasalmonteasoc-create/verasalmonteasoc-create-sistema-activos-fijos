@@ -427,10 +427,40 @@
                     <h2>Gestión de Activos</h2>
                     <button class="btn btn-success" onclick="openAssetModal()">Nuevo Activo</button>
                     <button class="btn" onclick="openImportAssetsModal()">Importar Excel</button>
-                    <table>
-                        <thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Departamento</th><th>Costo</th><th>Acciones</th></tr></thead>
-                        <tbody id="assetsTable"><tr><td colspan="6">Cargando...</td></tr></tbody>
-                    </table>
+
+                    <!-- Barra de control: buscar · agrupar · cambiar de vista -->
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin:16px 0;">
+                        <div style="position:relative;flex:1;min-width:190px;">
+                            <i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#94a3b8;"></i>
+                            <input type="text" id="assetViewSearch" placeholder="Buscar por código, descripción, marca o placa…"
+                                oninput="renderAssetsView()"
+                                style="width:100%;padding:10px 10px 10px 34px;border:1px solid #ddd;border-radius:6px;">
+                        </div>
+                        <select id="assetViewGroup" onchange="renderAssetsView()" style="padding:10px;border:1px solid #ddd;border-radius:6px;">
+                            <option value="">Sin agrupar</option>
+                            <option value="category">Agrupar por categoría</option>
+                            <option value="department">Agrupar por departamento</option>
+                            <option value="status">Agrupar por estado</option>
+                        </select>
+                        <div style="display:flex;border:1px solid #ddd;border-radius:6px;overflow:hidden;">
+                            <button id="btnViewList" onclick="setAssetView('list')" title="Vista de lista"
+                                style="border:none;background:var(--view-on,#003D7A);color:white;padding:10px 14px;cursor:pointer;"><i class="fas fa-list"></i></button>
+                            <button id="btnViewKanban" onclick="setAssetView('kanban')" title="Vista de tarjetas"
+                                style="border:none;background:#f1f5f9;color:#475569;padding:10px 14px;cursor:pointer;"><i class="fas fa-th-large"></i></button>
+                        </div>
+                        <span id="assetViewCount" style="font-size:13px;color:#64748b;"></span>
+                    </div>
+
+                    <!-- Vista de lista -->
+                    <div id="assetsListView">
+                        <table>
+                            <thead><tr><th>Código</th><th>Descripción</th><th>Categoría</th><th>Departamento</th><th>Costo</th><th>Estado</th><th>Acciones</th></tr></thead>
+                            <tbody id="assetsTable"><tr><td colspan="7">Cargando...</td></tr></tbody>
+                        </table>
+                    </div>
+
+                    <!-- Vista de tarjetas (kanban) -->
+                    <div id="assetsKanbanView" style="display:none;"></div>
                 </div>
 
                 <div id="depreciation-page" class="page">
@@ -1381,6 +1411,12 @@
             <span class="close-modal" onclick="closeAssetDetailsModal()">&times;</span>
             <h2>Detalles del Activo</h2>
 
+            <!-- Barra de estado del ciclo de vida -->
+            <div id="assetStatusbar" style="display:flex;gap:4px;flex-wrap:wrap;margin:14px 0 4px;"></div>
+
+            <!-- Indicadores rápidos del activo -->
+            <div id="assetSmartButtons" style="display:flex;gap:10px;flex-wrap:wrap;margin:12px 0;"></div>
+
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
                 <!-- Información Básica -->
                 <div style="border: 1px solid #ddd; padding: 15px; border-radius: 5px;">
@@ -1629,6 +1665,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=32"></script>
+    <script src="js/app.js?v=33"></script>
 </body>
 </html>

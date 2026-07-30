@@ -76,6 +76,7 @@ def serialize_asset(asset):
         'asset_condition': asset.asset_condition,
         'accumulated_depreciation': asset.get_accumulated_depreciation(),
         'net_book_value': asset.get_net_book_value(),
+        'last_verified_at': asset.last_verified_at.isoformat() if asset.last_verified_at else None,
         'is_fully_depreciated': asset.is_fully_depreciated(),
         'created_at': asset.created_at.isoformat(),
         'updated_at': asset.updated_at.isoformat()
