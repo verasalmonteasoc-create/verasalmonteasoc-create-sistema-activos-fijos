@@ -57,6 +57,38 @@ Los archivos de `af-vhost/` y `af-activos/` NO sufren esta trampa (están bajo
 un mount de directorio): cambios ahí solo necesitan
 `sudo docker exec tesoreria-nginx nginx -s reload`.
 
+## ⚠️ El `include` se borra cuando GestionCxC se redespliega → hay un auto-reparador
+
+Cada vez que el proyecto de tesorería se redespliega, **regenera su `nginx.conf` y
+borra la línea `include`**. Cuando eso pasa, el puerto 443 responde con el
+certificado de `cxc` y nuestro sitio queda inaccesible ("La conexión no es privada").
+
+Para no tener que repararlo a mano existe **`scripts/ensure_vhost.sh`**, que
+detecta y corrige esa situación (también resincroniza el certificado tras cada
+renovación). Es idempotente: si todo está bien, no toca nada.
+
+```bash
+# Diagnosticar sin cambiar nada
+sudo bash /opt/af-activos-fijos/scripts/ensure_vhost.sh --check
+
+# Verificar y reparar
+sudo bash /opt/af-activos-fijos/scripts/ensure_vhost.sh
+```
+
+**Dejarlo automático (recomendado)** — revisa cada 10 minutos:
+
+```bash
+sudo crontab -l 2>/dev/null | grep -q ensure_vhost || \
+  (sudo crontab -l 2>/dev/null; echo '*/10 * * * * /bin/bash /opt/af-activos-fijos/scripts/ensure_vhost.sh >> /var/log/af-vhost.log 2>&1') | sudo crontab -
+```
+
+Revisar qué ha hecho: `sudo tail -20 /var/log/af-vhost.log`
+
+Nota: si falta el `include`, la única forma de que el contenedor lea el
+`nginx.conf` corregido es reiniciarlo (~5 s de corte para tesorería). El script
+solo lo hace cuando nuestro sitio **ya está caído**, y valida la configuración
+con un contenedor desechable **antes** de reiniciar nada.
+
 ## Renovación del certificado (cada ~90 días, manual por DNS-01)
 
 El cert actual vence el **21-oct-2026**. Procedimiento completo:
