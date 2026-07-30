@@ -13,6 +13,7 @@ Flujo completo (estilo SAP MI/Inventario físico, operable desde el celular):
   5. Al cerrar: reporte de contados / faltantes / diferencias / no registrados
      (en pantalla y en Excel), y opción de APLICAR los hallazgos al maestro.
 """
+import re
 from flask import Blueprint, request, jsonify
 from flask_login import current_user
 from datetime import datetime
@@ -37,20 +38,42 @@ def resolve_scanned_code(raw):
     """Convierte lo que devuelve el escáner en un activo.
 
     Acepta:
+      - La URL del QR actual:  "https://af.aplicacionesrd.com/activo/995"
+      - La URL del QR anterior: "https://af.aplicacionesrd.com/?asset_id=995"
       - El código del activo: "VEH-001"
-      - La URL del QR: "https://af.aplicacionesrd.com/?asset_id=995"
       - El chasis/VIN o el número de serie
     """
     if not raw:
         return None
     text = str(raw).strip()
 
-    # 1) URL con ?asset_id=
-    if '://' in text or text.startswith('/?'):
+    # 1) Cualquier URL: se examina la query y el path
+    if '://' in text or text.startswith('/'):
         try:
-            qs = parse_qs(urlparse(text).query)
-            if 'asset_id' in qs:
+            parsed = urlparse(text)
+
+            # 1a) Formato anterior: ?asset_id=N
+            qs = parse_qs(parsed.query)
+            if 'asset_id' in qs and qs['asset_id'][0].isdigit():
                 a = Asset.query.get(int(qs['asset_id'][0]))
+                if a:
+                    return a
+
+            # 1b) Formato actual: /activo/N
+            m = re.search(r'/activo/(\d+)', parsed.path)
+            if m:
+                a = Asset.query.get(int(m.group(1)))
+                if a:
+                    return a
+
+            # 1c) Último segmento del path: puede ser un id o un código
+            seg = parsed.path.rstrip('/').split('/')[-1]
+            if seg:
+                if seg.isdigit():
+                    a = Asset.query.get(int(seg))
+                    if a:
+                        return a
+                a = Asset.query.filter(db.func.upper(Asset.code) == seg.upper()).first()
                 if a:
                     return a
         except (ValueError, TypeError):
@@ -72,6 +95,29 @@ def resolve_scanned_code(raw):
         db.or_(db.func.upper(Asset.chassis) == text.upper(),
                db.func.upper(Asset.serial_number) == text.upper())
     ).first()
+
+
+def _not_found_message(raw):
+    """Mensaje de error que explica POR QUÉ no se encontró el activo."""
+    text = str(raw or '').strip()
+    ident = None
+    if '://' in text or text.startswith('/'):
+        try:
+            parsed = urlparse(text)
+            m = re.search(r'/activo/(\d+)', parsed.path)
+            qs = parse_qs(parsed.query)
+            if m:
+                ident = m.group(1)
+            elif 'asset_id' in qs:
+                ident = qs['asset_id'][0]
+        except (ValueError, TypeError):
+            pass
+    if ident:
+        return (f'El QR apunta al activo #{ident}, que no existe en este sistema. '
+                f'Puede ser un QR de otra base de datos o de un activo eliminado.')
+    if not text:
+        return 'No se recibió ningún código.'
+    return f'No se encontró ningún activo con el código "{text[:60]}".'
 
 
 def _scope_query(session):
@@ -186,9 +232,10 @@ def reopen_session(session_id):
 def lookup():
     """Resuelve un código/QR y devuelve la ficha del activo, SIN registrar nada.
     Lo usa el escáner para mostrar el activo antes de confirmar el conteo."""
-    asset = resolve_scanned_code(request.args.get('code'))
+    code = request.args.get('code')
+    asset = resolve_scanned_code(code)
     if not asset:
-        return jsonify({'success': False, 'message': 'No se encontró ningún activo con ese código'}), 404
+        return jsonify({'success': False, 'message': _not_found_message(code)}), 404
 
     session = InventorySession.query.filter_by(status='open').order_by(InventorySession.started_at.desc()).first()
     already = None
@@ -236,7 +283,7 @@ def register_count():
     if not asset:
         asset = resolve_scanned_code(data.get('code'))
     if not asset:
-        return jsonify({'success': False, 'message': 'Activo no encontrado'}), 404
+        return jsonify({'success': False, 'message': _not_found_message(data.get('code'))}), 404
 
     found_dept_id = data.get('found_department_id') or asset.department_id
     found_loc_id = data.get('found_location_id') or asset.location_id
